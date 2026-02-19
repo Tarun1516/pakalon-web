@@ -1,0 +1,31 @@
+{
+  "app": {
+    "[project]/app/dashboard/billing/page": [
+      "static/media/0c89a48fa5027cee-s.p.4564287c.woff2"
+    ],
+    "[project]/app/dashboard/docs/page": [
+      "static/media/0c89a48fa5027cee-s.p.4564287c.woff2"
+    ],
+    "[project]/app/dashboard/page": [
+      "static/media/0c89a48fa5027cee-s.p.4564287c.woff2"
+    ],
+    "[project]/app/dashboard/profile/page": [
+      "static/media/0c89a48fa5027cee-s.p.4564287c.woff2"
+    ],
+    "[project]/app/dashboard/support/page": [
+      "static/media/0c89a48fa5027cee-s.p.4564287c.woff2"
+    ],
+    "[project]/app/login/page": [
+      "static/media/0c89a48fa5027cee-s.p.4564287c.woff2"
+    ],
+    "[project]/app/page": [
+      "static/media/0c89a48fa5027cee-s.p.4564287c.woff2"
+    ],
+    "[project]/app/pricing/page": [
+      "static/media/0c89a48fa5027cee-s.p.4564287c.woff2"
+    ]
+  },
+  "appUsingSizeAdjust": true,
+  "pages": {},
+  "pagesUsingSizeAdjust": false
+}

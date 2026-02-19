@@ -1,0 +1,13 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/dashboard/billing/page": "/dashboard/billing",
+  "/dashboard/docs/page": "/dashboard/docs",
+  "/dashboard/page": "/dashboard",
+  "/dashboard/profile/page": "/dashboard/profile",
+  "/dashboard/support/page": "/dashboard/support",
+  "/login/page": "/login",
+  "/page": "/",
+  "/pricing/page": "/pricing",
+  "/verify/page": "/verify"
+}
