@@ -2,8 +2,55 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { useState, useEffect, useCallback } from 'react'
+
+const commands = [
+    'curl -sSL https://pakalon.dev/install.sh | sh',
+    'npm install -g pakalon',
+]
 
 export default function LandingPage() {
+    const [cmdIndex, setCmdIndex] = useState(0)
+    const [visible, setVisible] = useState(true)
+    const [copied, setCopied] = useState(false)
+
+    // Alternate commands every 10 seconds with a brief fade
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setVisible(false)
+            setTimeout(() => {
+                setCmdIndex((prev) => (prev + 1) % commands.length)
+                setVisible(true)
+            }, 400)
+        }, 10000)
+        return () => clearInterval(interval)
+    }, [])
+
+    const handleCopy = useCallback(() => {
+        navigator.clipboard.writeText(commands[cmdIndex]).then(() => {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        })
+    }, [cmdIndex])
+
+    const features = [
+        {
+            label: 'Secure Auth',
+            icon: 'lock',
+            desc: 'Effortless API key rotation. Never hardcode credentials again.',
+        },
+        {
+            label: 'Build Securely',
+            icon: 'verified_user',
+            desc: 'End-to-end encrypted pipelines. Ship with confidence, not compromises.',
+        },
+        {
+            label: 'Usage Analytics',
+            icon: 'monitoring',
+            desc: 'Real-time tracking of token usage across all providers.',
+        },
+    ]
+
     return (
         <div className="relative min-h-screen bg-background-dark overflow-x-hidden">
             <nav className="sticky top-0 z-50 w-full border-b border-border-dark bg-background-dark/80 backdrop-blur-md px-6 py-4">
@@ -12,14 +59,14 @@ export default function LandingPage() {
                         <Image
                             src="/assets/Light_theme_TPBG.png"
                             alt="Pakalon"
-                            width={195}
-                            height={79}
-                            className="h-[79px] w-auto object-contain"
+                            width={225}
+                            height={109}
+                            className="h-[109px] w-auto object-contain"
                             priority
                         />
                     </div>
                     <div className="flex items-center gap-6">
-                        <Link href="/dashboard/docs" className="text-sm text-[#b1b4a2] hover:text-white">
+                        <Link href="/docs" className="text-sm text-[#b1b4a2] hover:text-white">
                             Docs
                         </Link>
                         <Link href="/pricing" className="text-sm text-[#b1b4a2] hover:text-white">
@@ -45,24 +92,44 @@ export default function LandingPage() {
                         The Agentic AI for <span className="text-primary">Modern Devs</span>
                     </h1>
                     <p className="text-lg text-[#b1b4a2] max-w-lg leading-relaxed">
-                        Stop wrestling with scattered API keys and undocumented endpoints. Pakalon unifies your AI workflow with seamless authentication and usage tracking right from your terminal.
+                        Stop wrestling with scattered API keys and undocumented endpoints. Pakalon unifies your
+                        AI workflow with seamless authentication and usage tracking right from your terminal.
                     </p>
+
+                    {/* Animated CLI command input */}
                     <div className="space-y-3 max-w-md">
                         <label className="text-xs font-bold text-[#b1b4a2] uppercase tracking-wider">
                             Install via CLI
                         </label>
                         <div className="flex items-center bg-surface-dark border border-border-dark rounded-lg overflow-hidden h-12">
-                            <div className="size-12 flex items-center justify-center text-primary bg-white/5 border-r border-border-dark">
+                            <div className="size-12 flex items-center justify-center text-primary bg-white/5 border-r border-border-dark shrink-0">
                                 <span className="material-symbols-outlined">chevron_right</span>
                             </div>
-                            <input
-                                readOnly
-                                value="curl -sSL https://pakalon.dev/install.sh | sh"
-                                className="bg-transparent px-4 font-mono text-sm text-primary flex-1 outline-none"
-                            />
-                            <button className="px-4 text-[#b1b4a2] hover:text-white">
-                                <span className="material-symbols-outlined text-lg">content_copy</span>
+                            <span
+                                className="px-4 font-mono text-sm text-primary flex-1 truncate transition-opacity duration-400"
+                                style={{ opacity: visible ? 1 : 0 }}
+                            >
+                                {commands[cmdIndex]}
+                            </span>
+                            <button
+                                onClick={handleCopy}
+                                className="px-4 text-[#b1b4a2] hover:text-white shrink-0 transition-colors"
+                                title="Copy command"
+                            >
+                                <span className="material-symbols-outlined text-lg">
+                                    {copied ? 'check' : 'content_copy'}
+                                </span>
                             </button>
+                        </div>
+                        {/* Dot indicators */}
+                        <div className="flex gap-1.5 pl-1">
+                            {commands.map((_, i) => (
+                                <div
+                                    key={i}
+                                    className={`h-1 rounded-full transition-all duration-300 ${i === cmdIndex ? 'w-5 bg-primary' : 'w-1.5 bg-[#b1b4a2]/30'
+                                        }`}
+                                />
+                            ))}
                         </div>
                     </div>
                 </div>
@@ -110,23 +177,7 @@ export default function LandingPage() {
                         Built for the <span className="text-primary">Command Line</span>
                     </h2>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
-                        {[
-                            {
-                                label: 'Secure Auth',
-                                icon: 'lock',
-                                desc: 'Effortless API key rotation. Never hardcode credentials again.',
-                            },
-                            {
-                                label: 'Instant Docs',
-                                icon: 'menu_book',
-                                desc: 'Context-aware help right in your terminal. Get parameters instantly.',
-                            },
-                            {
-                                label: 'Usage Analytics',
-                                icon: 'monitoring',
-                                desc: 'Real-time tracking of token usage across all providers.',
-                            },
-                        ].map((f, i) => (
+                        {features.map((f, i) => (
                             <div
                                 key={i}
                                 className="bg-background-dark border border-border-dark p-8 rounded-xl hover:border-primary/30 transition-all"
@@ -139,6 +190,92 @@ export default function LandingPage() {
                             </div>
                         ))}
                     </div>
+                </div>
+            </section>
+
+            {/* Security / Design / Memory section */}
+            <section className="py-24 border-b border-border-dark bg-background-dark">
+                <div className="max-w-7xl mx-auto px-6 space-y-20">
+
+                    {/* Security */}
+                    <div className="space-y-8">
+                        <div className="flex items-center gap-4">
+                            <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                                <span className="material-symbols-outlined">shield</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-white">Security</h2>
+                                <p className="text-sm text-[#b1b4a2]">Integrated scanning and vulnerability tools that ship with your workflow</p>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-6">
+                            {[
+                                { src: '/tools/Bandit.png', name: 'Bandit' },
+                                { src: '/tools/Brakeman.jpg', name: 'Brakeman' },
+                                { src: '/tools/FindSecBugs.png', name: 'FindSecBugs' },
+                                { src: '/tools/Gitleaks.jpg', name: 'Gitleaks' },
+                                { src: '/tools/OwaspZap.png', name: 'OWASP ZAP' },
+                                { src: '/tools/SQLmap.png', name: 'SQLmap' },
+                                { src: '/tools/Semgrep.png', name: 'Semgrep' },
+                                { src: '/tools/SonarQube.png', name: 'SonarQube' },
+                                { src: '/tools/Wapiti.jpg', name: 'Wapiti' },
+                                { src: '/tools/Nikto.jpg', name: 'Nikto' },
+                                { src: '/tools/XSStrike.png', name: 'XSStrike' },
+                            ].map((tool) => (
+                                <div key={tool.name} className="flex flex-col items-center gap-2 group" title={tool.name}>
+                                    <Image src={tool.src} alt={tool.name} width={73} height={73} className="w-[73px] h-[73px] object-contain" />
+                                    <span className="text-[10px] text-[#b1b4a2] text-center group-hover:text-white transition-colors">{tool.name}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="border-t border-border-dark" />
+
+                    {/* Design */}
+                    <div className="space-y-8">
+                        <div className="flex items-center gap-4">
+                            <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                                <span className="material-symbols-outlined">palette</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-white">Design</h2>
+                                <p className="text-sm text-[#b1b4a2]">Open-source design tooling that integrates right into your pipeline</p>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-6">
+                            {[{ src: '/design/Penpot.jpg', name: 'Penpot' }].map((tool) => (
+                                <div key={tool.name} className="flex flex-col items-center gap-2 group" title={tool.name}>
+                                    <Image src={tool.src} alt={tool.name} width={73} height={73} className="w-[73px] h-[73px] object-contain" />
+                                    <span className="text-[10px] text-[#b1b4a2] text-center group-hover:text-white transition-colors">{tool.name}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="border-t border-border-dark" />
+
+                    {/* Memory */}
+                    <div className="space-y-8">
+                        <div className="flex items-center gap-4">
+                            <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                                <span className="material-symbols-outlined">memory</span>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-bold text-white">Memory</h2>
+                                <p className="text-sm text-[#b1b4a2]">Persistent agent memory that learns and adapts from every session</p>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-6">
+                            {[{ src: '/memory/mem0.png', name: 'mem0' }].map((tool) => (
+                                <div key={tool.name} className="flex flex-col items-center gap-2 group" title={tool.name}>
+                                    <Image src={tool.src} alt={tool.name} width={73} height={73} className="w-[73px] h-[73px] object-contain" />
+                                    <span className="text-[10px] text-[#b1b4a2] text-center group-hover:text-white transition-colors">{tool.name}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
                 </div>
             </section>
 

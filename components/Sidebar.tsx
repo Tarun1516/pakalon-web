@@ -18,7 +18,7 @@ export default function Sidebar() {
     { label: 'Usage', icon: 'bar_chart', href: '/dashboard' },
     { label: 'Billing', icon: 'credit_card', href: '/dashboard/billing' },
     { label: 'Profile', icon: 'person', href: '/dashboard/profile' },
-    { label: 'Documentation', icon: 'menu_book', href: '/dashboard/docs' },
+    { label: 'Documentation', icon: 'menu_book', href: '/docs?from=dashboard' },
     { label: 'Contact Us', icon: 'mail', href: '/dashboard/support' },
   ]
 
@@ -29,9 +29,9 @@ export default function Sidebar() {
           <Image
             src="/assets/Light_theme_TPBG.png"
             alt="Pakalon"
-            width={195}
-            height={79}
-            className="h-[79px] w-auto object-contain"
+            width={225}
+            height={109}
+            className="h-[109px] w-auto object-contain"
             priority
           />
         </Link>

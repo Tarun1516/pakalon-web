@@ -12,6 +12,9 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
     title: 'Pakalon',
     description: 'pakalon',
+    icons: {
+        icon: '/assets/Mini-logo.ico',
+    },
 }
 
 export default function RootLayout({
