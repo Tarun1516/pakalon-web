@@ -165,7 +165,7 @@ class ApiClient {
   }
 
   // Billing
-  async createCheckout(priceId: string): Promise{ url: string } {
+  async createCheckout(priceId: string): Promise<{ url: string }> {
     return this.fetch('/billing/checkout', {
       method: 'POST',
       body: JSON.stringify({ price_id: priceId }),
@@ -173,7 +173,7 @@ class ApiClient {
   }
 
   async getSubscription(): Promise<{ subscription_id: string; status: string; current_period_end: string } | null> {
-    return this.fetch('/billing/subscription').catch(() => null)
+    return this.fetch<{ subscription_id: string; status: string; current_period_end: string }>('/billing/subscription').catch(() => null)
   }
 
   async cancelSubscription(): Promise<void> {

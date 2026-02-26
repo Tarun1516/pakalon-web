@@ -19,6 +19,7 @@ export default function Sidebar() {
     { label: 'Billing', icon: 'credit_card', href: '/dashboard/billing' },
     { label: 'Profile', icon: 'person', href: '/dashboard/profile' },
     { label: 'Documentation', icon: 'menu_book', href: '/docs?from=dashboard' },
+    { label: 'Changelog', icon: 'update', href: '/changelog?from=dashboard' },
     { label: 'Contact Us', icon: 'mail', href: '/dashboard/support' },
   ]
 

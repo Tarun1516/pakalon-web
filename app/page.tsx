@@ -69,6 +69,9 @@ export default function LandingPage() {
                         <Link href="/docs" className="text-sm text-[#b1b4a2] hover:text-white">
                             Docs
                         </Link>
+                        <Link href="/changelog" className="text-sm text-[#b1b4a2] hover:text-white">
+                            Changelog
+                        </Link>
                         <Link href="/pricing" className="text-sm text-[#b1b4a2] hover:text-white">
                             Pricing
                         </Link>
