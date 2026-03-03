@@ -38,15 +38,15 @@ const changelog: VersionEntry[] = [
 ]
 
 const typeStyles: Record<Change['type'], { bg: string; text: string; label: string }> = {
-    added:   { bg: 'bg-green-500/10 border-green-500/20',  text: 'text-green-400',  label: 'Added' },
-    changed: { bg: 'bg-primary/10  border-primary/20',    text: 'text-primary',    label: 'Changed' },
-    fixed:   { bg: 'bg-red-500/10  border-red-500/20',    text: 'text-red-400',    label: 'Fixed' },
+    added: { bg: 'bg-green-500/10 border-green-500/20', text: 'text-green-400', label: 'Added' },
+    changed: { bg: 'bg-primary/10  border-primary/20', text: 'text-primary', label: 'Changed' },
+    fixed: { bg: 'bg-red-500/10  border-red-500/20', text: 'text-red-400', label: 'Fixed' },
 }
 
 function ChangelogContent() {
     const searchParams = useSearchParams()
     const from = searchParams.get('from')
-    const backHref  = from === 'dashboard' ? '/dashboard' : '/'
+    const backHref = from === 'dashboard' ? '/dashboard' : '/'
     const backLabel = from === 'dashboard' ? 'Back to Dashboard' : 'Back to Home'
 
     return (
@@ -132,19 +132,13 @@ function ChangelogContent() {
                                         {entry.summary}
                                     </p>
 
-                                    {/* Changes list */}
                                     <ul className="space-y-2.5">
-                                        {entry.changes.map((change, i) => {
-                                            const s = typeStyles[change.type]
-                                            return (
-                                                <li key={i} className="flex items-start gap-3 text-sm text-[#b1b4a2]">
-                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide shrink-0 mt-0.5 ${s.bg} ${s.text}`}>
-                                                        {s.label}
-                                                    </span>
-                                                    {change.text}
-                                                </li>
-                                            )
-                                        })}
+                                        {entry.changes.map((change, i) => (
+                                            <li key={i} className="flex items-start gap-2 text-sm text-[#b1b4a2]">
+                                                <span className="mt-1.5 size-1.5 rounded-full bg-[#b1b4a2]/50 shrink-0" />
+                                                {change.text}
+                                            </li>
+                                        ))}
                                     </ul>
                                 </div>
                             </div>
