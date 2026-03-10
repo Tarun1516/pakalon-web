@@ -1,17 +1,52 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase'
 
 export default function PricingPage() {
     const router = useRouter()
     const [showWaitlist, setShowWaitlist] = useState(false)
     const [submitted, setSubmitted] = useState(false)
     const [form, setForm] = useState({ name: '', location: '', email: '' })
+    const [isAuthenticated, setIsAuthenticated] = useState(false)
+    const [isCheckingSession, setIsCheckingSession] = useState(true)
+
+    useEffect(() => {
+        const supabase = createClient()
+
+        supabase.auth.getSession().then(({ data }) => {
+            setIsAuthenticated(Boolean(data.session))
+            setIsCheckingSession(false)
+        })
+
+        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+            setIsAuthenticated(Boolean(session))
+            setIsCheckingSession(false)
+        })
+
+        return () => listener.subscription.unsubscribe()
+    }, [])
+
+    const freePlanCta = useMemo(() => {
+        if (isCheckingSession) {
+            return 'Checking access…'
+        }
+        return isAuthenticated ? 'Continue to Dashboard' : 'Sign in to Get Started'
+    }, [isAuthenticated, isCheckingSession])
 
     const handleSelect = () => {
-        router.push('/dashboard')
+        if (isCheckingSession) {
+            return
+        }
+
+        if (isAuthenticated) {
+            router.push('/dashboard')
+            return
+        }
+
+        router.push('/login?next=%2Fpricing')
     }
 
     const handleWaitlistSubmit = (e: React.FormEvent) => {
@@ -62,9 +97,14 @@ export default function PricingPage() {
                     </div>
                     <button
                         onClick={handleSelect}
-                        className="w-full py-3 rounded-lg border border-border-dark font-bold hover:bg-white/5 transition-colors"
+                        disabled={isCheckingSession}
+                        className={`w-full py-3 rounded-lg border font-bold transition-colors ${
+                            isCheckingSession
+                                ? 'border-border-dark text-[#b1b4a2] cursor-not-allowed'
+                                : 'border-border-dark hover:bg-white/5'
+                        }`}
                     >
-                        Get Started
+                        {freePlanCta}
                     </button>
                     <div className="space-y-4">
                         <p className="text-xs font-bold text-[#b1b4a2] uppercase tracking-wider">

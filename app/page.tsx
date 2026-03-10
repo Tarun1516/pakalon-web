@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useState, useEffect, useCallback } from 'react'
+import { createClient } from '@/lib/supabase'
 
 const commands = [
     'curl -sSL https://pakalon.dev/install.sh | sh',
@@ -13,6 +14,8 @@ export default function LandingPage() {
     const [cmdIndex, setCmdIndex] = useState(0)
     const [visible, setVisible] = useState(true)
     const [copied, setCopied] = useState(false)
+    const [isSignedIn, setIsSignedIn] = useState(false)
+    const [authResolved, setAuthResolved] = useState(false)
 
     // Alternate commands every 10 seconds with a brief fade
     useEffect(() => {
@@ -26,12 +29,29 @@ export default function LandingPage() {
         return () => clearInterval(interval)
     }, [])
 
+    // Check if user is already signed in via Supabase
+    useEffect(() => {
+        const supabase = createClient()
+        supabase.auth.getSession().then(({ data }) => {
+            setIsSignedIn(!!data.session)
+            setAuthResolved(true)
+        })
+        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+            setIsSignedIn(!!session)
+            setAuthResolved(true)
+        })
+        return () => listener.subscription.unsubscribe()
+    }, [])
+
     const handleCopy = useCallback(() => {
         navigator.clipboard.writeText(commands[cmdIndex]).then(() => {
             setCopied(true)
             setTimeout(() => setCopied(false), 2000)
         })
     }, [cmdIndex])
+
+    const primaryHref = isSignedIn ? '/dashboard' : '/login?next=%2Fpricing'
+    const primaryLabel = isSignedIn ? 'Go to Dashboard' : 'Getting Started'
 
     const features = [
         {
@@ -76,10 +96,10 @@ export default function LandingPage() {
                             Pricing
                         </Link>
                         <Link
-                            href="/login"
-                            className="bg-primary text-background-dark px-4 py-2 rounded-lg font-bold text-sm hover:scale-105 transition-transform"
+                            href={primaryHref}
+                            className={`bg-primary text-background-dark px-4 py-2 rounded-lg font-bold text-sm hover:scale-105 transition-transform ${!authResolved ? 'opacity-80' : ''}`}
                         >
-                            Get Started
+                            {primaryLabel}
                         </Link>
                     </div>
                 </div>

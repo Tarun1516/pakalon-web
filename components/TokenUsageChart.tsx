@@ -10,21 +10,44 @@ import {
     ResponsiveContainer,
 } from 'recharts'
 
-const data = [
-    { name: 'Mon', tokens: 80000 },
-    { name: 'Tue', tokens: 110000 },
-    { name: 'Wed', tokens: 130000 },
-    { name: 'Thu', tokens: 160000 },
-    { name: 'Fri', tokens: 140000 },
-    { name: 'Sat', tokens: 175000 },
-    { name: 'Sun', tokens: 185000 },
-]
+interface ChartDataPoint {
+    name: string
+    tokens: number
+}
 
-export default function TokenUsageChart() {
+interface Props {
+    data?: ChartDataPoint[]
+}
+
+const TOKEN_AXIS_MAX = 2_000_000
+const TOKEN_AXIS_TICKS = [0, 56_000, 128_000, 256_000, 512_000, 1_000_000, 1_500_000, 2_000_000]
+
+const TOKEN_AXIS_LABELS: Record<number, string> = {
+    0: '0',
+    56_000: '56k',
+    128_000: '128k',
+    256_000: '256k',
+    512_000: '512k',
+    1_000_000: '1m',
+    1_500_000: '1.5m',
+    2_000_000: '2m',
+}
+
+function formatTokenTick(value: number) {
+    return TOKEN_AXIS_LABELS[value] ?? value.toLocaleString()
+}
+
+const EMPTY_DATA: ChartDataPoint[] = Array.from({ length: 7 }, (_, i) => ({
+    name: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
+    tokens: 0,
+}))
+
+export default function TokenUsageChart({ data }: Props) {
+    const chartData = data && data.length > 0 ? data : EMPTY_DATA
     return (
         <div className="h-[200px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data}>
+                <AreaChart data={chartData}>
                     <defs>
                         <linearGradient id="colorTokens" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#d7e19d" stopOpacity={0.3} />
@@ -44,7 +67,11 @@ export default function TokenUsageChart() {
                         fontSize={12}
                         tickLine={false}
                         axisLine={false}
-                        tickFormatter={(val) => `${val / 1000}k`}
+                        width={60}
+                        domain={[0, TOKEN_AXIS_MAX]}
+                        ticks={TOKEN_AXIS_TICKS}
+                        allowDecimals={false}
+                        tickFormatter={formatTokenTick}
                     />
                     <Tooltip
                         contentStyle={{
@@ -53,6 +80,8 @@ export default function TokenUsageChart() {
                             borderRadius: '8px',
                         }}
                         itemStyle={{ color: '#d7e19d' }}
+                        labelStyle={{ color: '#b1b4a2' }}
+                        formatter={(value: number) => [`${value.toLocaleString()} tokens`, 'Tokens']}
                     />
                     <Area
                         type="monotone"

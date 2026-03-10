@@ -36,12 +36,25 @@ export interface Model {
 }
 
 export interface UsageData {
+  user_id: string
+  plan: string
   total_tokens: number
   tokens_by_model: Record<string, number>
   daily_tokens: { date: string; tokens: number }[]
   daily_lines_written: { date: string; lines: number }[]
   lines_written: number
   sessions_count: number
+  // Subscription / trial fields
+  subscription_id: string | null
+  subscription_status: string | null
+  current_period_start: string | null
+  current_period_end: string | null
+  days_into_cycle: number | null
+  is_in_grace_period: boolean
+  grace_period_warning: boolean
+  grace_days_remaining: number
+  trial_days_used: number
+  trial_days_remaining: number
 }
 
 export interface ContributionDay {
@@ -54,7 +67,163 @@ export interface ContributionDay {
   level: number
 }
 
+export interface WebSignInResponse {
+  token: string
+  user_id: string
+  plan: string
+  github_login: string
+}
+
+export interface BillingStatus {
+  status: string // active | canceled | past_due | none
+  polar_sub_id: string | null
+  current_period_end: string | null
+  grace_until: string | null
+  plan: string | null
+  days_remaining: number | null
+  in_grace_period: boolean
+}
+
+export interface LoginEvent {
+  id: string
+  login_type: 'web' | 'device_code' | 'token'
+  ip_address: string | null
+  browser: string | null
+  os: string | null
+  device_name: string | null
+  machine_id: string | null
+  created_at: string
+}
+
+export interface DashboardSession {
+  id: string
+  title: string | null
+  model_id: string | null
+  mode: string | null
+  project_dir: string | null
+  lines_added: number
+  lines_deleted: number
+  context_pct_used: number | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface DashboardModelUsage {
+  model_id: string
+  total_tokens: number
+  total_lines: number
+  call_count: number
+}
+
+export interface DashboardStats {
+  user: {
+    id: string
+    email: string | null
+    github_login: string | null
+    plan: string
+    trial_days_remaining: number
+    trial_days_used: number
+    created_at: string | null
+  }
+  subscription: {
+    id: string
+    polar_sub_id: string | null
+    status: string
+    plan: string
+    period_start: string | null
+    period_end: string | null
+  } | null
+  sessions: DashboardSession[]
+  model_usage: DashboardModelUsage[]
+  totals: {
+    tokens: number
+    lines: number
+    sessions: number
+    sessions_today: number
+  }
+  credits: {
+    balance: number
+  } | null
+  login_events: LoginEvent[]
+  window_days: number
+  generated_at: string
+}
+
+export interface AutomationTemplate {
+  key: string
+  name: string
+  description: string
+  recommended_connectors: string[]
+  default_cron: string
+  prompt_hint: string
+}
+
+export interface AutomationRecord {
+  id: string
+  name: string
+  description: string | null
+  prompt: string
+  template_key: string | null
+  inferred_config: Record<string, any>
+  required_connectors: string[]
+  schedule_cron: string | null
+  schedule_timezone: string
+  enabled: boolean
+  last_run_at: string | null
+  last_status: string | null
+  last_error: string | null
+  created_at: string
+  updated_at: string
+  missing_connectors: string[]
+}
+
+export interface AutomationConnector {
+  provider: string
+  display_name: string
+  category: string
+  logo_domain?: string | null
+  logo_url?: string | null
+  oauth_supported: boolean
+  enabled: boolean
+  connected: boolean
+  connection_status: string
+  account_label: string | null
+  scopes: string[]
+  coming_soon: boolean
+}
+
+export interface AutomationConnectorCatalog {
+  connected: AutomationConnector[]
+  available: AutomationConnector[]
+}
+
+export interface AutomationLogRecord {
+  id: string
+  automation_id: string
+  trigger_type: string
+  status: string
+  summary: string | null
+  details: Record<string, any>
+  started_at: string
+  completed_at: string | null
+}
+
+export interface AutomationCronJob {
+  automation_id: string
+  automation_name: string
+  schedule_cron: string
+  schedule_timezone: string
+  enabled: boolean
+  next_run_at: string | null
+  last_run_at: string | null
+  last_status: string | null
+}
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+function buildNetworkErrorMessage(): string {
+  return `Could not connect to the Pakalon backend at ${API_BASE}. Make sure the backend server is running and reachable.`
+}
 
 class ApiClient {
   private token: string | null = null
@@ -81,6 +250,13 @@ class ApiClient {
     }
   }
 
+  logout() {
+    this.clearToken()
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login'
+    }
+  }
+
   private async fetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const token = this.getToken()
     const headers: HeadersInit = {
@@ -89,12 +265,24 @@ class ApiClient {
       ...options.headers,
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    })
+    let response: Response
+    try {
+      response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+      })
+    } catch {
+      throw new Error(buildNetworkErrorMessage())
+    }
 
     if (!response.ok) {
+      // On 401 clear the stale token and redirect to login
+      if (response.status === 401) {
+        this.clearToken()
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login'
+        }
+      }
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
       throw new Error(error.detail || `HTTP ${response.status}`)
     }
@@ -141,7 +329,7 @@ class ApiClient {
   }
 
   // Usage
-  async getUsage(): Promise<UsageData & { user_id: string; plan: string }> {
+  async getUsage(): Promise<UsageData> {
     return this.fetch('/usage')
   }
 
@@ -156,12 +344,16 @@ class ApiClient {
   }
 
   // User
-  async updateProfile(data: { display_name?: string; privacy_mode?: boolean }): Promise<User> {
-    const userId = await this.getMe().then(u => u.id).catch(() => 'me')
-    return this.fetch(`/users/${userId}`, {
+  async updateProfile(data: { display_name?: string; privacy_mode?: boolean }, userId?: string): Promise<User> {
+    const id = userId ?? await this.getMe().then(u => u.id)
+    return this.fetch(`/users/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     })
+  }
+
+  async deleteAccount(userId: string): Promise<void> {
+    return this.fetch(`/users/${userId}`, { method: 'DELETE' })
   }
 
   // Billing
@@ -172,12 +364,122 @@ class ApiClient {
     })
   }
 
-  async getSubscription(): Promise<{ subscription_id: string; status: string; current_period_end: string } | null> {
-    return this.fetch<{ subscription_id: string; status: string; current_period_end: string }>('/billing/subscription').catch(() => null)
+  async getBillingStatus(): Promise<BillingStatus | null> {
+    return this.fetch<BillingStatus>('/billing/subscription').catch(() => null)
+  }
+
+  async getPortalUrl(): Promise<string> {
+    const res = await this.fetch<{ portal_url: string }>('/billing/portal-url')
+    return res.portal_url
   }
 
   async cancelSubscription(): Promise<void> {
     return this.fetch('/billing/cancel', { method: 'DELETE' })
+  }
+
+  async getLoginEvents(): Promise<LoginEvent[]> {
+    const res = await this.fetch<{ login_events?: LoginEvent[] }>('/dashboard/stats?days=90')
+    return res.login_events ?? []
+  }
+
+  async getDashboardStats(days = 30, startDate?: string, endDate?: string): Promise<DashboardStats> {
+    const params = new URLSearchParams({ days: String(days) })
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    return this.fetch<DashboardStats>(`/dashboard/stats?${params.toString()}`)
+  }
+
+  // Automations
+  async getAutomations(): Promise<{ automations: AutomationRecord[]; templates: AutomationTemplate[] }> {
+    return this.fetch('/automations')
+  }
+
+  async createAutomation(data: {
+    name: string
+    prompt: string
+    required_connectors?: string[]
+    schedule_cron?: string
+    schedule_timezone?: string
+    template_key?: string
+  }): Promise<AutomationRecord> {
+    return this.fetch('/automations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateAutomation(id: string, data: { enabled?: boolean; schedule_cron?: string; schedule_timezone?: string }): Promise<AutomationRecord> {
+    return this.fetch(`/automations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteAutomation(id: string): Promise<{ queued: boolean; automation_id: string; message: string }> {
+    return this.fetch(`/automations/${id}`, { method: 'DELETE' })
+  }
+
+  async runAutomation(id: string): Promise<{ queued: boolean; automation_id: string; message: string }> {
+    return this.fetch(`/automations/${id}/run`, { method: 'POST' })
+  }
+
+  async getAutomationConnectors(): Promise<AutomationConnectorCatalog> {
+    return this.fetch('/automations/connectors')
+  }
+
+  async startAutomationOAuth(provider: string): Promise<{ provider: string; auth_url: string }> {
+    return this.fetch(`/automations/connectors/${provider}/oauth/start`, { method: 'POST' })
+  }
+
+  async toggleAutomationConnector(provider: string, enabled: boolean): Promise<AutomationConnectorCatalog> {
+    return this.fetch(`/automations/connectors/${provider}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    })
+  }
+
+  async getAutomationCronJobs(): Promise<{ cron_jobs: AutomationCronJob[] }> {
+    return this.fetch('/automations/cron-jobs')
+  }
+
+  async getAutomationLogs(automationId?: string): Promise<{ logs: AutomationLogRecord[] }> {
+    const params = automationId ? `?automation_id=${encodeURIComponent(automationId)}` : ''
+    return this.fetch(`/automations/logs${params}`)
+  }
+
+  // Web sign-in (GitHub OAuth via Clerk)
+  async webSignIn(
+    clerkToken: string,
+    github_login: string,
+    email?: string | null,
+    display_name?: string | null,
+  ): Promise<WebSignInResponse> {
+    let response: Response
+    try {
+      response = await fetch(`${API_BASE}/auth/web-signin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${clerkToken}`,
+        },
+        body: JSON.stringify({ github_login, email, display_name }),
+      })
+    } catch {
+      throw new Error(buildNetworkErrorMessage())
+    }
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Sign-in failed' }))
+      throw new Error(error.detail || `HTTP ${response.status}`)
+    }
+    return response.json()
+  }
+
+  // Support
+  async submitSupport(data: { name: string; email: string; subject: string; message: string }): Promise<{ success: boolean; message: string }> {
+    return this.fetch('/support', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
   }
 }
 
@@ -188,15 +490,18 @@ export function useUser() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
+    setLoading(true)
+    setError(null)
     api.getMe()
       .then(setUser)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
-  }, [])
+  }, [tick])
 
-  return { user, loading, error, refetch: () => setLoading(true) }
+  return { user, loading, error, refetch: () => setTick(t => t + 1) }
 }
 
 export function useSessions(limit = 50) {
@@ -218,30 +523,36 @@ export function useUsage() {
   const [usage, setUsage] = useState<UsageData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
+    setLoading(true)
+    setError(null)
     api.getUsage()
       .then(setUsage)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
-  }, [])
+  }, [tick])
 
-  return { usage, loading, error, refetch: () => setLoading(true) }
+  return { usage, loading, error, refetch: () => setTick(t => t + 1) }
 }
 
 export function useHeatmap(year?: number) {
   const [data, setData] = useState<ContributionDay[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
+    setLoading(true)
+    setError(null)
     api.getHeatmap(year)
       .then(res => setData(res.contributions))
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
-  }, [year])
+  }, [year, tick])
 
-  return { data, loading, error, refetch: () => setLoading(true) }
+  return { data, loading, error, refetch: () => setTick(t => t + 1) }
 }
 
 export function useModels() {
@@ -249,8 +560,11 @@ export function useModels() {
   const [plan, setPlan] = useState<string>('free')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
+    setLoading(true)
+    setError(null)
     api.listModels()
       .then(data => {
         setModels(data.models)
@@ -258,7 +572,131 @@ export function useModels() {
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
+  }, [tick])
+
+  return { models, plan, loading, error, refetch: () => setTick(t => t + 1) }
+}
+
+export function useBillingStatus() {
+  const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.getBillingStatus()
+      .then(setBillingStatus)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
   }, [])
 
-  return { models, plan, loading, error, refetch: () => setLoading(true) }
+  return { billingStatus, loading, error }
+}
+
+export function useLoginEvents() {
+  const [loginEvents, setLoginEvents] = useState<LoginEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.getLoginEvents()
+      .then(setLoginEvents)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  return { loginEvents, loading, error }
+}
+
+export function useDashboardStats(days = 30, startDate?: string, endDate?: string) {
+  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    api.getDashboardStats(days, startDate, endDate)
+      .then(setStats)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [days, startDate, endDate, tick])
+
+  return { stats, loading, error, refetch: () => setTick(t => t + 1) }
+}
+
+export function useAutomations() {
+  const [automations, setAutomations] = useState<AutomationRecord[]>([])
+  const [templates, setTemplates] = useState<AutomationTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    api.getAutomations()
+      .then((data) => {
+        setAutomations(data.automations)
+        setTemplates(data.templates)
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [tick])
+
+  return { automations, templates, loading, error, refetch: () => setTick(t => t + 1) }
+}
+
+export function useAutomationConnectors() {
+  const [catalog, setCatalog] = useState<AutomationConnectorCatalog | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    api.getAutomationConnectors()
+      .then(setCatalog)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [tick])
+
+  return { catalog, loading, error, refetch: () => setTick(t => t + 1) }
+}
+
+export function useAutomationCronJobs() {
+  const [cronJobs, setCronJobs] = useState<AutomationCronJob[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    api.getAutomationCronJobs()
+      .then(data => setCronJobs(data.cron_jobs))
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [tick])
+
+  return { cronJobs, loading, error, refetch: () => setTick(t => t + 1) }
+}
+
+export function useAutomationLogs(automationId?: string) {
+  const [logs, setLogs] = useState<AutomationLogRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    api.getAutomationLogs(automationId)
+      .then(data => setLogs(data.logs))
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [automationId, tick])
+
+  return { logs, loading, error, refetch: () => setTick(t => t + 1) }
 }

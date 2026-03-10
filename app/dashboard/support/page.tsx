@@ -1,6 +1,40 @@
 'use client'
 
+import { useState } from 'react'
+import { api, useUser } from '@/lib/api'
+
 export default function SupportPage() {
+    const { user } = useUser()
+    const [subject, setSubject] = useState('')
+    const [category, setCategory] = useState('General')
+    const [message, setMessage] = useState('')
+    const [submitting, setSubmitting] = useState(false)
+    const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!message.trim() || !subject.trim()) return
+        setSubmitting(true)
+        setResult(null)
+        try {
+            const res = await api.submitSupport({
+                name: user?.display_name || user?.github_login || 'Pakalon User',
+                email: user?.email || 'unknown@pakalon.dev',
+                subject: `[${category}] ${subject}`,
+                message,
+            })
+            setResult(res)
+            if (res.success) {
+                setSubject('')
+                setCategory('General')
+                setMessage('')
+            }
+        } catch (err) {
+            setResult({ success: false, message: (err as Error).message || 'Failed to send message.' })
+        } finally {
+            setSubmitting(false)
+        }
+    }
     return (
         <div className="max-w-5xl mx-auto p-8 lg:p-12 space-y-8">
             <div className="space-y-2">
@@ -16,7 +50,7 @@ export default function SupportPage() {
                     {[
                         { label: 'Email Us', desc: 'support@pakalon.dev', icon: 'mail' },
                         { label: 'Documentation', desc: 'Explore the CLI docs', icon: 'menu_book' },
-                        { label: 'HQ Location', desc: 'San Francisco, CA', icon: 'location_on' },
+                        { label: 'Developed at', desc: 'Salem, Tamilnadu', icon: 'location_on' },
                     ].map((card, i) => (
                         <div
                             key={i}
@@ -34,14 +68,6 @@ export default function SupportPage() {
                         </div>
                     ))}
 
-                    <div className="relative w-full h-48 rounded-2xl overflow-hidden border border-border-dark bg-surface-dark">
-                        <div className="absolute inset-0 bg-[radial-gradient(#4d4f40_1px,transparent_1px)] bg-[length:20px_20px] opacity-20"></div>
-                        <div className="absolute bottom-4 left-4 z-20">
-                            <p className="text-xs font-bold text-primary uppercase tracking-wider mb-1">Global HQ</p>
-                            <p className="text-white font-bold text-lg">San Francisco</p>
-                        </div>
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-3 bg-primary rounded-full shadow-[0_0_20px_rgba(215,225,157,0.6)] animate-pulse"></div>
-                    </div>
                 </div>
 
                 <div className="lg:col-span-8">
@@ -51,22 +77,32 @@ export default function SupportPage() {
                             <p className="text-[#b1b4a2]">Got a bug report or feature request? We&apos;d love to hear from you.</p>
                         </div>
 
-                        <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+                        <form className="space-y-6" onSubmit={handleSubmit}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-white">Subject</label>
                                     <input
                                         type="text"
+                                        value={subject}
+                                        onChange={(e) => setSubject(e.target.value)}
                                         placeholder="What is this regarding?"
+                                        required
                                         className="w-full bg-background-dark/50 border border-border-dark rounded-xl px-4 py-3 text-white focus:ring-1 focus:ring-primary focus:border-primary outline-none"
                                     />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-white">Category</label>
-                                    <select className="w-full bg-background-dark/50 border border-border-dark rounded-xl px-4 py-3 text-white outline-none">
-                                        <option>General Support</option>
-                                        <option>Bug Report</option>
-                                        <option>Feature Request</option>
+                                    <select
+                                        value={category}
+                                        onChange={(e) => setCategory(e.target.value)}
+                                        className="w-full bg-background-dark/50 border border-border-dark rounded-xl px-4 py-3 text-white outline-none focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer"
+                                    >
+                                        <option value="General">General</option>
+                                        <option value="Business">Business</option>
+                                        <option value="Issue">Issue</option>
+                                        <option value="Complaint">Complaint</option>
+                                        <option value="Feature Request">Feature Request</option>
+                                        <option value="Billing">Billing</option>
                                     </select>
                                 </div>
                             </div>
@@ -74,19 +110,32 @@ export default function SupportPage() {
                                 <label className="text-sm font-medium text-white">Message</label>
                                 <textarea
                                     rows={6}
+                                    value={message}
+                                    onChange={(e) => setMessage(e.target.value)}
                                     placeholder="Tell us more about what you need help with..."
+                                    required
                                     className="w-full bg-background-dark/50 border border-border-dark rounded-xl px-4 py-3 text-white focus:ring-1 focus:ring-primary focus:border-primary outline-none resize-none"
                                 />
                             </div>
+                            {result && (
+                                <div className={`px-4 py-3 rounded-lg text-sm ${result.success ? 'bg-green-900/20 text-green-400 border border-green-900/30' : 'bg-red-900/20 text-red-400 border border-red-900/30'}`}>
+                                    {result.message}
+                                </div>
+                            )}
                             <div className="flex justify-end gap-4 pt-4">
-                                <button type="button" className="text-[#b1b4a2] hover:text-white font-bold text-sm">
+                                <button
+                                    type="button"
+                                    onClick={() => { setSubject(''); setMessage(''); setResult(null) }}
+                                    className="text-[#b1b4a2] hover:text-white font-bold text-sm"
+                                >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-6 py-3 bg-primary text-background-dark rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-primary-hover"
+                                    disabled={submitting || !subject.trim() || !message.trim()}
+                                    className="px-6 py-3 bg-primary text-background-dark rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-primary-hover disabled:opacity-60"
                                 >
-                                    Send Message{' '}
+                                    {submitting ? 'Sending...' : 'Send Message'}{' '}
                                     <span className="material-symbols-outlined text-sm">send</span>
                                 </button>
                             </div>

@@ -1,18 +1,53 @@
 'use client'
 
 import Image from 'next/image'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
 
-export default function GithubLoginPage() {
-    const [isConnecting, setIsConnecting] = useState(false)
+function GithubLoginContent() {
     const router = useRouter()
+    const searchParams = useSearchParams()
+    const [isConnecting, setIsConnecting] = useState(false)
+    const initialError = searchParams.get('error')
+    const [errorMsg, setErrorMsg] = useState<string | null>(initialError)
+    const nextPath = useMemo(() => {
+        const rawNext = searchParams.get('next') || '/pricing'
+        return rawNext.startsWith('/') ? rawNext : '/pricing'
+    }, [searchParams])
 
-    const handleLogin = () => {
+    useEffect(() => {
+        const supabase = createClient()
+        supabase.auth.getSession().then(({ data }) => {
+            if (data.session && !initialError) {
+                router.replace(`/auth/exchange?next=${encodeURIComponent(nextPath)}`)
+            }
+        })
+    }, [initialError, nextPath, router])
+
+    const handleLogin = async () => {
         setIsConnecting(true)
-        setTimeout(() => {
-            router.push('/pricing')
-        }, 1500)
+        setErrorMsg(null)
+        try {
+            const supabase = createClient()
+            const { data } = await supabase.auth.getSession()
+            if (data.session) {
+                router.replace(`/auth/exchange?next=${encodeURIComponent(nextPath)}`)
+                return
+            }
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'github',
+                options: {
+                    redirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(nextPath)}`,
+                },
+            })
+            if (error) throw error
+            // Supabase redirects the browser away — no further action needed here
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'GitHub sign-in failed'
+            setErrorMsg(message)
+            setIsConnecting(false)
+        }
     }
 
     return (
@@ -79,6 +114,10 @@ export default function GithubLoginPage() {
                         </div>
                     </div>
 
+                    {errorMsg && (
+                        <p className="text-sm text-red-400 text-center px-2">{errorMsg}</p>
+                    )}
+
                     <button
                         onClick={handleLogin}
                         disabled={isConnecting}
@@ -125,5 +164,22 @@ export default function GithubLoginPage() {
                 </div>
             </div>
         </div>
+    )
+}
+
+export default function GithubLoginPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="min-h-screen flex items-center justify-center bg-background-dark">
+                    <div className="flex flex-col items-center gap-4">
+                        <div className="size-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                        <p className="text-[#b1b4a2] text-sm">Preparing sign-in…</p>
+                    </div>
+                </div>
+            }
+        >
+            <GithubLoginContent />
+        </Suspense>
     )
 }
