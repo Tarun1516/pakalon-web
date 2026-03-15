@@ -2,26 +2,39 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { api, useUser, useUsage } from '@/lib/api'
+import { api, useBillingStatus, useUser, useUsage } from '@/lib/api'
 
 export default function BillingPage() {
     const router = useRouter()
     const { user, loading: userLoading } = useUser()
     const { usage, loading: usageLoading } = useUsage()
+    const { billingStatus, loading: billingLoading } = useBillingStatus()
     const [portalLoading, setPortalLoading] = useState(false)
     const [cancelConfirm, setCancelConfirm] = useState(false)
     const [cancelling, setCancelling] = useState(false)
 
     const plan = user?.plan ?? 'free'
     const isPro = plan === 'pro'
-    const isActive = usage?.subscription_status === 'active'
-    const periodEnd = usage?.current_period_end ? new Date(usage.current_period_end) : null
-    const daysIntoCurrentCycle = usage?.days_into_cycle ?? 0
-    const daysRemaining = periodEnd
-        ? Math.max(0, Math.ceil((periodEnd.getTime() - Date.now()) / 86_400_000))
-        : null
+    const isActive = (billingStatus?.status ?? usage?.subscription_status) === 'active'
+    const periodEnd = billingStatus?.current_period_end
+        ? new Date(billingStatus.current_period_end)
+        : usage?.current_period_end
+            ? new Date(usage.current_period_end)
+            : null
+    const daysIntoCurrentCycle = billingStatus?.days_into_cycle ?? usage?.days_into_cycle ?? 0
+    const daysRemaining = billingStatus?.days_remaining
+        ?? (periodEnd
+            ? Math.max(0, Math.ceil((periodEnd.getTime() - Date.now()) / 86_400_000))
+            : null)
     const totalCycleDays = daysIntoCurrentCycle + (daysRemaining ?? 0)
     const cycleProgress = totalCycleDays > 0 ? Math.round((daysIntoCurrentCycle / totalCycleDays) * 100) : 0
+    const securityDeposit = billingStatus?.security_deposit_usd ?? 2
+    const platformFeeRate = Math.round((billingStatus?.platform_fee_rate ?? 0.1) * 100)
+    const usageCharges = billingStatus?.usage_charges_usd ?? 0
+    const platformFee = billingStatus?.platform_fee_usd ?? 0
+    const depositApplied = billingStatus?.deposit_applied_usd ?? 0
+    const estimatedDue = billingStatus?.estimated_total_due_usd ?? 0
+    const cycleTokenUsage = billingStatus?.cycle_token_usage ?? 0
 
     const handleOpenPortal = async () => {
         setPortalLoading(true)
@@ -48,7 +61,7 @@ export default function BillingPage() {
         }
     }
 
-    if (userLoading || usageLoading) {
+    if (userLoading || usageLoading || billingLoading) {
         return (
             <div className="max-w-6xl mx-auto p-8 lg:p-12 flex items-center justify-center min-h-64">
                 <div className="text-[#b1b4a2]">Loading billing information...</div>
@@ -61,7 +74,7 @@ export default function BillingPage() {
             <div className="flex flex-col md:flex-row justify-between items-end gap-4">
                 <div className="space-y-2">
                     <h2 className="text-3xl font-bold tracking-tight text-white">Billing &amp; Subscription</h2>
-                    <p className="text-[#b1b4a2]">Manage your plan, payment method, and invoices.</p>
+                    <p className="text-[#b1b4a2]">Postpaid Pro billing, usage estimates, and payment settings.</p>
                 </div>
                 <button
                     onClick={() => router.push('/dashboard/support')}
@@ -86,14 +99,14 @@ export default function BillingPage() {
                                 </span>
                             </div>
                             <p className="text-white text-lg font-bold mt-2">
-                                {isPro ? '$19.00' : '$0.00'}{' '}
-                                <span className="text-[#b1b4a2] text-sm font-normal">/ month</span>
+                                {isPro ? `$${securityDeposit.toFixed(2)} deposit + usage` : '$0.00'}{' '}
+                                <span className="text-[#b1b4a2] text-sm font-normal">{isPro ? '(postpaid)' : '/ lifetime'}</span>
                             </p>
                         </div>
                         <button
                             onClick={() => router.push('/pricing')}
                             className="w-full mt-6 py-2 px-4 bg-primary text-background-dark font-bold text-sm rounded hover:bg-primary-hover transition-colors">
-                            {isPro ? 'Change Plan' : 'Upgrade to Pro'}
+                            {isPro ? 'Manage Pro Access' : 'Upgrade to Pro'}
                         </button>
                     </div>
                     <span className="material-symbols-outlined text-8xl text-primary absolute -right-6 -top-6 opacity-5 rotate-12">
@@ -107,12 +120,17 @@ export default function BillingPage() {
                             <>
                                 <div className="flex justify-between items-start">
                                     <div>
-                                        <p className="text-[#b1b4a2] text-xs font-bold uppercase tracking-wider">Next Payment</p>
+                                        <p className="text-[#b1b4a2] text-xs font-bold uppercase tracking-wider">Current Cycle Estimate</p>
                                         <h3 className="text-white text-2xl font-bold">
-                                            {periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                            ${estimatedDue.toFixed(2)} due
                                         </h3>
                                     </div>
-                                    <p className="text-primary font-bold text-xl">$19.00</p>
+                                    <p className="text-primary font-bold text-xl">{cycleTokenUsage.toLocaleString()} tokens</p>
+                                </div>
+                                <div className="text-xs text-[#b1b4a2] space-y-1">
+                                    <p>Usage charges: ${usageCharges.toFixed(4)}</p>
+                                    <p>Platform fee ({platformFeeRate}%): ${platformFee.toFixed(4)}</p>
+                                    <p>Deposit applied: -${depositApplied.toFixed(4)}</p>
                                 </div>
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-xs text-[#b1b4a2]">
@@ -126,17 +144,12 @@ export default function BillingPage() {
                             </>
                         ) : (
                             <div className="flex flex-col gap-3">
-                                <p className="text-[#b1b4a2] text-xs font-bold uppercase tracking-wider">Trial Status</p>
+                                <p className="text-[#b1b4a2] text-xs font-bold uppercase tracking-wider">Free Tier Policy</p>
                                 <div>
-                                    <p className="text-white text-2xl font-bold">{usage?.trial_days_remaining ?? 0} days left</p>
-                                    <p className="text-[#b1b4a2] text-sm mt-1">of your 30-day free trial</p>
+                                    <p className="text-white text-2xl font-bold">Lifetime Free</p>
+                                    <p className="text-[#b1b4a2] text-sm mt-1">Access OpenRouter models ending with <span className="font-mono">:free</span>.</p>
                                 </div>
-                                <div className="h-2 w-full bg-background-dark rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full bg-primary transition-all"
-                                        style={{ width: `${Math.min(100, ((usage?.trial_days_used ?? 0) / 30) * 100)}%` }}
-                                    />
-                                </div>
+                                <p className="text-xs text-[#8f937c]">Upgrade to Pro for usage-based access to all models.</p>
                             </div>
                         )}
                     </div>
@@ -147,7 +160,7 @@ export default function BillingPage() {
                         <div className="space-y-1">
                             <p className="text-[#b1b4a2] text-xs font-bold uppercase tracking-wider">Billing Portal</p>
                             <p className="text-white text-sm mt-3 leading-relaxed">
-                                View invoices, update your payment method, and manage your subscription directly in the Polar billing portal.
+                                View invoices, update your payment method, and manage your postpaid Pro access in the Polar billing portal.
                             </p>
                         </div>
                         <div className="flex flex-col gap-3 mt-6">
@@ -194,8 +207,8 @@ export default function BillingPage() {
                 {isPro ? (
                     <div className="bg-surface-dark border border-border-dark rounded-xl p-8 text-center space-y-4">
                         <span className="material-symbols-outlined text-4xl text-[#b1b4a2] block">receipt_long</span>
-                        <p className="text-white font-medium">View your full invoice history in the Polar billing portal</p>
-                        <p className="text-[#b1b4a2] text-sm">Download PDF invoices, check payment history, and update billing details.</p>
+                        <p className="text-white font-medium">View postpaid invoices in the Polar billing portal</p>
+                        <p className="text-[#b1b4a2] text-sm">Includes usage charges, {platformFeeRate}% platform fee, and deposit adjustments.</p>
                         <button
                             onClick={handleOpenPortal}
                             disabled={portalLoading}
@@ -207,7 +220,7 @@ export default function BillingPage() {
                     </div>
                 ) : (
                     <div className="bg-surface-dark border border-border-dark rounded-xl p-8 text-center space-y-3">
-                        <p className="text-[#b1b4a2] text-sm">No invoices — you&apos;re on the free plan.</p>
+                        <p className="text-[#b1b4a2] text-sm">No invoices — free tier is lifetime and only uses <span className="font-mono">:free</span> models.</p>
                         <button
                             onClick={() => router.push('/pricing')}
                             className="inline-flex items-center gap-2 text-sm font-bold text-primary hover:text-white transition-colors"

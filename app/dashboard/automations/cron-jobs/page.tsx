@@ -1,12 +1,12 @@
 'use client'
 
 import { AutomationsShell, statusPill } from '@/components/automations/AutomationsShell'
-import { useAutomationConnectors, useAutomationCronJobs, useAutomationLogs, useAutomations } from '@/lib/api'
+import { api, useAutomationConnectors, useAutomationCronJobs, useAutomationLogs, useAutomations } from '@/lib/api'
 
 export default function AutomationCronJobsPage() {
   const { automations } = useAutomations()
   const { catalog } = useAutomationConnectors()
-  const { cronJobs, loading, error } = useAutomationCronJobs()
+  const { cronJobs, loading, error, refetch: refetchCron } = useAutomationCronJobs()
   const { logs } = useAutomationLogs()
 
   return (
@@ -28,28 +28,49 @@ export default function AutomationCronJobsPage() {
 
         {loading && <p className="text-[#b1b4a2]">Loading cron jobs…</p>}
         {error && <p className="text-red-300">{error}</p>}
-        {!loading && !cronJobs.length && (
+        {!loading && !automations.length && (
           <div className="rounded-xl border border-dashed border-border-dark px-4 py-5 text-sm text-[#b1b4a2]">
-            No cron jobs yet. Add a schedule when creating an automation.
+            No automations created yet.
           </div>
         )}
 
-        {cronJobs.map((job) => (
-          <div key={job.automation_id} className="flex flex-col gap-3 rounded-xl border border-border-dark bg-background-dark p-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="font-semibold text-white">{job.automation_name}</p>
-              <p className="text-sm text-[#b1b4a2]">{job.schedule_cron} • {job.schedule_timezone}</p>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span className={`rounded-full border px-2 py-1 ${statusPill(job.last_status ?? (job.enabled ? 'enabled' : 'paused'))}`}>
-                {job.enabled ? 'ENABLED' : 'PAUSED'}
-              </span>
-              {job.next_run_at && (
-                <span className="rounded-full border border-white/10 px-2 py-1 text-[#d7dac8]">Next: {new Date(job.next_run_at).toLocaleString()}</span>
+        {automations.map((automation) => {
+          const job = cronJobs.find(j => j.automation_id === automation.id)
+
+          return (
+            <div key={automation.id} className="flex flex-col gap-4 rounded-xl border border-border-dark bg-background-dark p-5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white">{automation.name}</h3>
+                {job && (
+                  <span className={`rounded-full border px-2 py-0.5 text-xs ${statusPill(job.last_status ?? (job.enabled ? 'enabled' : 'paused'))}`}>
+                    {job.enabled ? 'ENABLED' : 'PAUSED'}
+                  </span>
+                )}
+              </div>
+              
+              {!job ? (
+                <div className="text-sm text-[#8f937c]">No cron job associated with this automation.</div>
+              ) : (
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between rounded-lg bg-[#1a1b16] p-4 border border-white/5">
+                  <div>
+                    <p className="text-sm text-[#b1b4a2] mb-1">Schedule logic</p>
+                    <p className="font-mono text-sm text-white bg-[#25261e] px-2 py-1 rounded inline-block">
+                      {job.schedule_cron}
+                    </p>
+                    <span className="ml-2 text-xs text-[#8f937c]">{job.schedule_timezone}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs mt-2 md:mt-0">
+                    {job.next_run_at && (
+                      <span className="rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-primary font-medium">
+                        Next: {new Date(job.next_run_at).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </AutomationsShell>
   )

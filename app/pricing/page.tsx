@@ -7,9 +7,6 @@ import { createClient } from '@/lib/supabase'
 
 export default function PricingPage() {
     const router = useRouter()
-    const [showWaitlist, setShowWaitlist] = useState(false)
-    const [submitted, setSubmitted] = useState(false)
-    const [form, setForm] = useState({ name: '', location: '', email: '' })
     const [isAuthenticated, setIsAuthenticated] = useState(false)
     const [isCheckingSession, setIsCheckingSession] = useState(true)
 
@@ -36,6 +33,13 @@ export default function PricingPage() {
         return isAuthenticated ? 'Continue to Dashboard' : 'Sign in to Get Started'
     }, [isAuthenticated, isCheckingSession])
 
+    const proPlanCta = useMemo(() => {
+        if (isCheckingSession) {
+            return 'Checking access…'
+        }
+        return isAuthenticated ? 'Open Pro Billing' : 'Sign in to Start Pro'
+    }, [isAuthenticated, isCheckingSession])
+
     const handleSelect = () => {
         if (isCheckingSession) {
             return
@@ -49,9 +53,17 @@ export default function PricingPage() {
         router.push('/login?next=%2Fpricing')
     }
 
-    const handleWaitlistSubmit = (e: React.FormEvent) => {
-        e.preventDefault()
-        setSubmitted(true)
+    const handleSelectPro = () => {
+        if (isCheckingSession) {
+            return
+        }
+
+        if (isAuthenticated) {
+            router.push('/dashboard/billing')
+            return
+        }
+
+        router.push('/login?next=%2Fdashboard%2Fbilling')
     }
 
     return (
@@ -79,8 +91,7 @@ export default function PricingPage() {
                     <span className="text-primary">effortlessly.</span>
                 </h1>
                 <p className="text-lg text-[#b1b4a2] max-w-xl mx-auto">
-                    Choose the plan that fits your development needs. Whether hacking on a project or scaling
-                    production.
+                    Lifetime free access for <span className="font-mono">:free</span> models, or unlock all models with Pro postpaid billing.
                 </p>
             </div>
 
@@ -112,8 +123,8 @@ export default function PricingPage() {
                         </p>
                         <ul className="space-y-3">
                             {[
-                                '30-day free trial',
-                                'Access to free AI models',
+                                'Lifetime free access',
+                                'OpenRouter models ending with :free',
                                 'Basic security scanning (Bandit, sqlmap)',
                                 'Penpot for wireframing and designing',
                             ].map((f, i) => (
@@ -132,17 +143,23 @@ export default function PricingPage() {
                     </div>
                     <div className="space-y-2">
                         <h3 className="text-2xl font-bold">Pro</h3>
-                        <p className="text-[#b1b4a2] text-sm">For professional developers and teams.</p>
+                        <p className="text-[#b1b4a2] text-sm">Postpaid usage billing for professionals and teams.</p>
                     </div>
                     <div className="flex items-baseline gap-2">
-                        <span className="text-5xl font-bold text-white">$19</span>
-                        <span className="text-[#b1b4a2] text-sm">/ month</span>
+                        <span className="text-5xl font-bold text-white">$2</span>
+                        <span className="text-[#b1b4a2] text-sm">security deposit</span>
                     </div>
+                    <p className="text-sm text-[#b1b4a2]">Monthly usage + 10% platform fee, then deposit adjustment.</p>
                     <button
-                        onClick={() => setShowWaitlist(true)}
-                        className="w-full py-3 rounded-lg bg-primary text-background-dark font-bold hover:brightness-110 transition-all"
+                        onClick={handleSelectPro}
+                        disabled={isCheckingSession}
+                        className={`w-full py-3 rounded-lg font-bold transition-all ${
+                            isCheckingSession
+                                ? 'bg-primary/60 text-background-dark cursor-not-allowed'
+                                : 'bg-primary text-background-dark hover:brightness-110'
+                        }`}
                     >
-                        Join the Waitlist
+                        {proPlanCta}
                     </button>
                     <div className="space-y-4">
                         <p className="text-xs font-bold text-primary uppercase tracking-wider">
@@ -152,6 +169,8 @@ export default function PricingPage() {
                             {[
                                 'Everything in Free, plus:',
                                 'All 550+ AI models',
+                                'Postpaid monthly usage statement',
+                                '10% platform fee on model usage',
                                 'Advanced security tools (Semgrep, OWASP ZAP)',
                                 'Priority support',
                                 'Extended context windows',
@@ -176,19 +195,19 @@ export default function PricingPage() {
                     {[
                         {
                             q: 'What happens if I exceed my limit?',
-                            a: 'Requests are softly throttled and we send email alerts.',
+                            a: 'For Pro, usage is metered postpaid; for Free, only :free models are available.',
                         },
                         {
                             q: 'Can I change plans at any time?',
-                            a: 'Yes, proration is handled automatically.',
+                            a: 'Yes. You can switch between Free and Pro from billing settings.',
                         },
                         {
-                            q: 'Do you offer annual discounts?',
-                            a: 'We offer 20% off for annual commitments.',
+                            q: 'How does Pro billing work?',
+                            a: 'Pro uses a $2 security deposit plus monthly model usage and a 10% platform fee.',
                         },
                         {
-                            q: 'How do I manage my API keys?',
-                            a: 'Manage everything from the Developer Dashboard.',
+                            q: 'Is Free really lifetime?',
+                            a: 'Yes. Free remains lifetime for models that end with :free.',
                         },
                     ].map((item, i) => (
                         <details
@@ -207,97 +226,6 @@ export default function PricingPage() {
                 </div>
             </div>
 
-            {/* Waitlist Modal */}
-            {showWaitlist && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm">
-                    <div className="w-full max-w-md bg-surface-dark border border-border-dark rounded-2xl p-8 space-y-6 shadow-2xl relative">
-                        <button
-                            onClick={() => { setShowWaitlist(false); setSubmitted(false); setForm({ name: '', location: '', email: '' }) }}
-                            className="absolute top-4 right-4 text-[#b1b4a2] hover:text-white transition-colors"
-                        >
-                            <span className="material-symbols-outlined">close</span>
-                        </button>
-
-                        {submitted ? (
-                            <div className="text-center py-8 space-y-4">
-                                <div className="size-16 mx-auto rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center">
-                                    <span className="material-symbols-outlined text-3xl text-primary">check_circle</span>
-                                </div>
-                                <h2 className="text-2xl font-bold text-white">You&apos;re on the list!</h2>
-                                <p className="text-[#b1b4a2] text-sm">
-                                    We&apos;ll reach out at <span className="text-primary">{form.email}</span> when Pro launches.
-                                </p>
-                                <button
-                                    onClick={() => { setShowWaitlist(false); setSubmitted(false); setForm({ name: '', location: '', email: '' }) }}
-                                    className="mt-4 px-6 py-2 rounded-lg bg-primary text-background-dark font-bold text-sm hover:brightness-110 transition-all"
-                                >
-                                    Done
-                                </button>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="space-y-1">
-                                    <h2 className="text-2xl font-bold text-white">Join the Waitlist</h2>
-                                    <p className="text-[#b1b4a2] text-sm">
-                                        Be first to access Pakalon Pro when it rolls out.
-                                    </p>
-                                </div>
-
-                                <form
-                                    className="space-y-4"
-                                    onSubmit={handleWaitlistSubmit}
-                                >
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-[#b1b4a2] uppercase tracking-wider">
-                                            Full Name
-                                        </label>
-                                        <input
-                                            required
-                                            type="text"
-                                            placeholder="Jane Smith"
-                                            value={form.name}
-                                            onChange={(e) => setForm({ ...form, name: e.target.value })}
-                                            className="w-full bg-background-dark border border-border-dark rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-[#b1b4a2]/50"
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-[#b1b4a2] uppercase tracking-wider">
-                                            Location
-                                        </label>
-                                        <input
-                                            required
-                                            type="text"
-                                            placeholder="San Francisco, CA"
-                                            value={form.location}
-                                            onChange={(e) => setForm({ ...form, location: e.target.value })}
-                                            className="w-full bg-background-dark border border-border-dark rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-[#b1b4a2]/50"
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-[#b1b4a2] uppercase tracking-wider">
-                                            Email ID
-                                        </label>
-                                        <input
-                                            required
-                                            type="email"
-                                            placeholder="jane@example.com"
-                                            value={form.email}
-                                            onChange={(e) => setForm({ ...form, email: e.target.value })}
-                                            className="w-full bg-background-dark border border-border-dark rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-[#b1b4a2]/50"
-                                        />
-                                    </div>
-                                    <button
-                                        type="submit"
-                                        className="w-full py-3 rounded-lg bg-primary text-background-dark font-bold hover:brightness-110 transition-all mt-2"
-                                    >
-                                        Join Waitlist
-                                    </button>
-                                </form>
-                            </>
-                        )}
-                    </div>
-                </div>
-            )}
         </div>
     )
 }

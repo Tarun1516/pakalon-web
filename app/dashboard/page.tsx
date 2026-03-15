@@ -1,12 +1,12 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useDashboardStats, useHeatmap, useUsage, type ContributionDay } from '@/lib/api'
 
 const TokenUsageChart = dynamic(() => import('@/components/TokenUsageChart'), { ssr: false })
 
-type RangePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'lastYear' | 'specific'
+type RangePreset = 'today' | 'yesterday' | 'last7' | 'lastWeek' | 'customWeek' | 'last30' | 'lastYear' | 'specific'
 
 type HeatmapWeek = {
     key: string
@@ -28,6 +28,8 @@ const RANGE_OPTIONS: Array<{ value: RangePreset; label: string }> = [
     { value: 'today', label: 'Today' },
     { value: 'yesterday', label: 'Yesterday' },
     { value: 'last7', label: 'Last 7 Days' },
+    { value: 'lastWeek', label: 'Last Week' },
+    { value: 'customWeek', label: 'Custom Week' },
     { value: 'last30', label: 'Last 30 Days' },
     { value: 'lastYear', label: 'Last Year' },
     { value: 'specific', label: 'Specific Date' },
@@ -46,11 +48,18 @@ function endOfDay(value: Date) {
 }
 
 function toDateInputValue(value: Date) {
-    return value.toISOString().slice(0, 10)
+    const year = value.getFullYear()
+    const month = String(value.getMonth() + 1).padStart(2, '0')
+    const day = String(value.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
 }
 
 function parseDay(value: string) {
-    return new Date(`${value}T00:00:00`)
+    const [year, month, day] = value.split('-').map(Number)
+    if (!year || !month || !day) {
+        return new Date(value)
+    }
+    return new Date(year, month - 1, day)
 }
 
 function buildActiveDateRange(
@@ -76,6 +85,25 @@ function buildActiveDateRange(
         case 'last7':
             start = startOfDay(new Date(today.getTime() - 6 * DAY_MS))
             break
+        case 'lastWeek': {
+            const lastSunday = new Date(today)
+            lastSunday.setDate(today.getDate() - today.getDay() - 7)
+            start = startOfDay(lastSunday)
+            const lastSaturday = new Date(start)
+            lastSaturday.setDate(start.getDate() + 6)
+            end = endOfDay(lastSaturday)
+            break
+        }
+        case 'customWeek': {
+            const chosen = specificDate ? parseDay(specificDate) : now
+            const chosenSunday = new Date(chosen)
+            chosenSunday.setDate(chosen.getDate() - chosen.getDay())
+            start = startOfDay(chosenSunday)
+            const chosenSaturday = new Date(start)
+            chosenSaturday.setDate(start.getDate() + 6)
+            end = endOfDay(chosenSaturday)
+            break
+        }
         case 'last30':
             start = startOfDay(new Date(today.getTime() - 29 * DAY_MS))
             break
@@ -90,7 +118,7 @@ function buildActiveDateRange(
         }
     }
 
-    if (accountCreatedAt) {
+    if (accountCreatedAt && preset !== 'lastWeek' && preset !== 'customWeek') {
         const accountStart = startOfDay(accountCreatedAt)
         if (start < accountStart) {
             start = accountStart
@@ -197,6 +225,19 @@ function formatCompactTokens(value: number) {
     return value.toString()
 }
 
+function calculateContributionLevel(total: number) {
+    if (total === 0) return 0
+    if (total <= 5) return 1
+    if (total <= 15) return 2
+    if (total <= 30) return 3
+    return 4
+}
+
+function truncatePrompt(value: string, maxChars = 72) {
+    if (value.length <= maxChars) return value
+    return `${value.slice(0, maxChars - 1)}…`
+}
+
 function getContributionTitle(contribution: ContributionDay | null) {
     if (!contribution) return ''
 
@@ -237,6 +278,17 @@ export default function DashboardPage() {
         [stats?.user.created_at],
     )
 
+    const accountCreatedLabel = useMemo(
+        () => accountCreatedAt
+            ? accountCreatedAt.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+            })
+            : '—',
+        [accountCreatedAt],
+    )
+
     const activeRange = useMemo(
         () => buildActiveDateRange(selectedRange, specificDate, accountCreatedAt),
         [selectedRange, specificDate, accountCreatedAt],
@@ -254,26 +306,55 @@ export default function DashboardPage() {
     )
 
     const chartData = useMemo(() => {
-        const labelOptions = activeRange.daysForBackend <= 7
-            ? { weekday: 'short' as const }
-            : { month: 'short' as const, day: 'numeric' as const }
+        const byDate = new Map(filteredDailyTokens.map(entry => [entry.date, entry.tokens]))
+        const points: Array<{ name: string; tokens: number; fullLabel: string }> = []
+        
+        const cursor = new Date(activeRange.start)
+        const end = new Date(activeRange.end)
 
-        return filteredDailyTokens.map(entry => ({
-            name: new Date(entry.date).toLocaleDateString('en-US', labelOptions),
-            tokens: entry.tokens,
-        }))
-    }, [filteredDailyTokens, activeRange.daysForBackend])
+        while (cursor <= end) {
+            const iso = cursor.toISOString().slice(0, 10)
+            const tokens = byDate.get(iso) ?? 0
+            const dayShort = cursor.toLocaleDateString('en-US', { weekday: 'short' })
+            points.push({
+                name: `${iso}___${dayShort}`,
+                tokens,
+                fullLabel: cursor.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }),
+            })
+            cursor.setDate(cursor.getDate() + 1)
+        }
+
+        return points
+    }, [filteredDailyTokens, activeRange.start, activeRange.end])
+
+    const topUsageMonths = useMemo(
+        () => chartData
+            .filter(entry => entry.tokens > 0)
+            .toSorted((left, right) => right.tokens - left.tokens)
+            .slice(0, 6),
+        [chartData],
+    )
 
     const sessions = useMemo(() => {
-        return (stats?.sessions ?? []).map(session => ({
+        return (stats?.sessions ?? []).map((session, index) => ({
+            serial: index + 1,
             id: session.id,
-            prompt: session.title || 'Untitled session',
+            prompt: truncatePrompt(
+                (session.prompt_text && session.prompt_text.trim())
+                || (session.title && session.title.trim().toLowerCase() !== 'new chat' ? session.title.trim() : '')
+                || 'Session started',
+            ),
+            fullPrompt: (session.prompt_text && session.prompt_text.trim())
+                || (session.title && session.title.trim().toLowerCase() !== 'new chat' ? session.title.trim() : '')
+                || 'Session started',
             lines: Math.max(0, session.lines_added - session.lines_deleted),
             model: session.model_id,
-            date: session.created_at
+            tokens: session.tokens_used,
+            timestamp: session.created_at
                 ? new Date(session.created_at).toLocaleString('en-US', {
                     month: 'short',
                     day: 'numeric',
+                    year: 'numeric',
                     hour: 'numeric',
                     minute: '2-digit',
                     hour12: true,
@@ -282,15 +363,38 @@ export default function DashboardPage() {
         }))
     }, [stats?.sessions])
 
-    const filteredHeatmapData = useMemo(() => {
-        return heatmapData.map(day => {
-            const dayDate = parseDay(day.date)
-            if (isWithinRange(dayDate, activeRange)) {
-                return day
-            }
+    const mergedHeatmapData = useMemo(() => {
+        const baseDays = buildEmptyContributionYear(selectedHeatmapYear)
+        const byDate = new Map(baseDays.map(day => [day.date, day]))
+        const usageLinesByDate = new Map(
+            (usage?.daily_lines_written ?? [])
+                .filter(entry => parseDay(entry.date).getFullYear() === selectedHeatmapYear)
+                .map(entry => [entry.date, entry.lines]),
+        )
 
-            return {
+        for (const day of heatmapData) {
+            if (parseDay(day.date).getFullYear() !== selectedHeatmapYear) continue
+            const mergedDay = {
+                ...(byDate.get(day.date) ?? {
+                    date: day.date,
+                    lines_added: 0,
+                    lines_deleted: 0,
+                    commits: 0,
+                    tokens_used: 0,
+                    sessions_count: 0,
+                    level: 0,
+                }),
                 ...day,
+            }
+            const total = mergedDay.lines_added + mergedDay.commits + mergedDay.sessions_count + (mergedDay.tokens_used > 0 ? 1 : 0)
+            mergedDay.level = Math.max(mergedDay.level, calculateContributionLevel(total))
+            byDate.set(day.date, mergedDay)
+        }
+
+        for (const entry of usage?.daily_tokens ?? []) {
+            if (parseDay(entry.date).getFullYear() !== selectedHeatmapYear) continue
+            const existing = byDate.get(entry.date) ?? {
+                date: entry.date,
                 lines_added: 0,
                 lines_deleted: 0,
                 commits: 0,
@@ -298,13 +402,42 @@ export default function DashboardPage() {
                 sessions_count: 0,
                 level: 0,
             }
-        })
-    }, [heatmapData, activeRange])
+            const mergedDay = {
+                ...existing,
+                tokens_used: Math.max(existing.tokens_used, entry.tokens),
+                lines_added: Math.max(existing.lines_added, usageLinesByDate.get(entry.date) ?? 0),
+            }
+            const total = mergedDay.lines_added + mergedDay.commits + mergedDay.sessions_count + (mergedDay.tokens_used > 0 ? 1 : 0)
+            mergedDay.level = Math.max(existing.level, calculateContributionLevel(total))
+            byDate.set(entry.date, mergedDay)
+        }
 
-    const heatmapWeeks = useMemo(() => buildHeatmapWeeks(filteredHeatmapData), [filteredHeatmapData])
+        for (const [date, lines] of usageLinesByDate.entries()) {
+            const existing = byDate.get(date) ?? {
+                date,
+                lines_added: 0,
+                lines_deleted: 0,
+                commits: 0,
+                tokens_used: 0,
+                sessions_count: 0,
+                level: 0,
+            }
+            const mergedDay = {
+                ...existing,
+                lines_added: Math.max(existing.lines_added, lines),
+            }
+            const total = mergedDay.lines_added + mergedDay.commits + mergedDay.sessions_count + (mergedDay.tokens_used > 0 ? 1 : 0)
+            mergedDay.level = Math.max(existing.level, calculateContributionLevel(total))
+            byDate.set(date, mergedDay)
+        }
+
+        return Array.from(byDate.values()).toSorted((left, right) => left.date.localeCompare(right.date))
+    }, [heatmapData, selectedHeatmapYear, usage?.daily_lines_written, usage?.daily_tokens])
+
+    const heatmapWeeks = useMemo(() => buildHeatmapWeeks(mergedHeatmapData), [mergedHeatmapData])
 
     const heatmapSummary = useMemo(() => {
-        return filteredHeatmapData.reduce(
+        return mergedHeatmapData.reduce(
             (summary, day) => ({
                 activeDays: summary.activeDays + (day.level > 0 ? 1 : 0),
                 linesAdded: summary.linesAdded + day.lines_added,
@@ -313,9 +446,14 @@ export default function DashboardPage() {
             }),
             { activeDays: 0, linesAdded: 0, linesDeleted: 0, tokensUsed: 0 },
         )
-    }, [filteredHeatmapData])
+    }, [mergedHeatmapData])
 
-    const loginEvents = stats?.login_events ?? []
+    const loginEvents = useMemo(
+        () => (stats?.login_events ?? []).toSorted((left, right) => (
+            new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+        )),
+        [stats?.login_events],
+    )
 
     const totalTokens = statsLoading ? null : (stats?.totals.tokens ?? 0)
     const totalLines = statsLoading ? null : (stats?.totals.lines ?? 0)
@@ -334,84 +472,44 @@ export default function DashboardPage() {
         }
     }
 
+    const dashboardRef = useRef<HTMLDivElement>(null)
+
     const handleExport = async () => {
         if (!stats) return
+        if (!dashboardRef.current) return
 
         setIsExporting(true)
         setExportError(null)
 
         try {
-            const [{ jsPDF }, { default: autoTable }] = await Promise.all([
-                import('jspdf'),
-                import('jspdf-autotable'),
-            ])
+            const html2canvas = (await import('html2canvas')).default
+            const { jsPDF } = await import('jspdf')
 
-            const doc = new jsPDF({ unit: 'pt', format: 'a4' })
-            doc.setFont('helvetica', 'bold')
-            doc.setFontSize(18)
-            doc.text('Pakalon Overview Export', 40, 44)
+            const canvas = await html2canvas(dashboardRef.current, { scale: 2, useCORS: true, backgroundColor: '#0e0e0b' })
+            const imgData = canvas.toDataURL('image/png')
+            
+            const pdf = new jsPDF('p', 'pt', 'a4')
+            const pdfWidth = pdf.internal.pageSize.getWidth()
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width
+            
+            // Adjust height if it overflows a single standard page to gracefully embed the long image
+            let position = 0;
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            if (pdfHeight > pageHeight) {
+                let heightLeft = pdfHeight;
+                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+                heightLeft -= pageHeight;
+                while (heightLeft >= 0) {
+                    position = heightLeft - pdfHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+                    heightLeft -= pageHeight;
+                }
+            } else {
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
+            }
 
-            doc.setFont('helvetica', 'normal')
-            doc.setFontSize(10)
-            doc.text(`Range: ${activeRange.label}`, 40, 64)
-            doc.text(`Generated: ${new Date().toLocaleString('en-US')}`, 40, 80)
-
-            autoTable(doc, {
-                startY: 98,
-                theme: 'grid',
-                styles: { fontSize: 10 },
-                head: [['Metric', 'Value']],
-                body: [
-                    ['Total Tokens', fmt(totalTokens)],
-                    ['Lines Written', fmt(totalLines)],
-                    ['Sessions', fmt(totalSessions)],
-                    ['Models Used', fmt(totalModels)],
-                    ['Active Contribution Days', heatmapSummary.activeDays.toLocaleString()],
-                ],
-            })
-
-            autoTable(doc, {
-                startY: ((doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 120) + 18,
-                theme: 'striped',
-                styles: { fontSize: 9 },
-                head: [['Date', 'Tokens']],
-                body: filteredDailyTokens.length > 0
-                    ? filteredDailyTokens.map(entry => [entry.date, entry.tokens.toLocaleString()])
-                    : [['—', '0']],
-            })
-
-            autoTable(doc, {
-                startY: ((doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 200) + 18,
-                theme: 'striped',
-                styles: { fontSize: 9 },
-                head: [['Recent Session', 'Model', 'Net Lines', 'Timestamp']],
-                body: sessions.length > 0
-                    ? sessions.slice(0, 10).map(session => [
-                        session.prompt,
-                        session.model ?? '—',
-                        session.lines.toLocaleString(),
-                        session.date,
-                    ])
-                    : [['No sessions in range', '—', '0', '—']],
-            })
-
-            autoTable(doc, {
-                startY: ((doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 280) + 18,
-                theme: 'striped',
-                styles: { fontSize: 9 },
-                head: [['Login Type', 'Browser / Device', 'Machine ID', 'IP', 'Timestamp']],
-                body: loginEvents.length > 0
-                    ? loginEvents.map(event => [
-                        event.login_type,
-                        event.browser ?? event.device_name ?? '—',
-                        event.machine_id ?? '—',
-                        event.ip_address ?? '—',
-                        new Date(event.created_at).toLocaleString('en-US'),
-                    ])
-                    : [['No login events in range', '—', '—', '—', '—']],
-            })
-
-            doc.save(`pakalon-overview-${activeRange.startParam}-to-${activeRange.endParam}.pdf`)
+            pdf.save(`pakalon-overview-${activeRange.startParam}-to-${activeRange.endParam}.pdf`)
         } catch (error) {
             setExportError(error instanceof Error ? error.message : 'Could not export overview as PDF.')
         } finally {
@@ -420,7 +518,7 @@ export default function DashboardPage() {
     }
 
     return (
-        <div className="p-8 space-y-8">
+        <div ref={dashboardRef} className="p-8 space-y-8 bg-[#0e0e0b]">
             {(usageError || statsError) && (
                 <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-400 text-sm flex items-center gap-2">
                     <span className="material-symbols-outlined text-lg">warning</span>
@@ -441,6 +539,7 @@ export default function DashboardPage() {
                     <p className="text-[#b1b4a2] text-sm">
                         {isLoading ? 'Loading...' : `Track your AI command activity and token consumption for ${activeRange.label}.`}
                     </p>
+                    <p className="text-[#8f937c] text-xs">Account created: {accountCreatedLabel}</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                     <select
@@ -452,7 +551,7 @@ export default function DashboardPage() {
                             <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
                     </select>
-                    {selectedRange === 'specific' && (
+                    {['specific', 'customWeek'].includes(selectedRange) && (
                         <input
                             type="date"
                             value={specificDate}
@@ -537,45 +636,95 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-[#1a1b16] border border-border-dark rounded-xl p-6">
-                    <h3 className="text-lg font-semibold mb-1">Token Usage</h3>
-                    <p className="text-xs text-[#b1b4a2] mb-4">{activeRange.label}</p>
-                    <div className="h-64">
-                        <TokenUsageChart data={chartData} />
+            <div className="bg-[#1a1b16] border border-border-dark rounded-xl p-6">
+                <h3 className="text-lg font-semibold mb-1">Token Usage</h3>
+                <p className="text-xs text-[#b1b4a2] mb-4">Daily usage within the selected range</p>
+                <div className="h-64">
+                    <TokenUsageChart data={chartData} />
+                </div>
+                <div className="mt-6">
+                    <h4 className="text-sm font-semibold text-white mb-3">Top Usage Months</h4>
+                    {topUsageMonths.length === 0 ? (
+                        <p className="text-[#b1b4a2] text-sm">No token usage recorded yet.</p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-border-dark">
+                                        <th className="text-left text-[#b1b4a2] font-medium pb-2 pr-4">Date</th>
+                                        <th className="text-left text-[#b1b4a2] font-medium pb-2">Tokens</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border-dark">
+                                    {topUsageMonths.map(month => (
+                                        <tr key={month.fullLabel}>
+                                            <td className="py-2 pr-4 text-white">{month.fullLabel}</td>
+                                            <td className="py-2 text-[#b1b4a2]">{month.tokens.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div className="bg-[#1a1b16] border border-border-dark rounded-xl p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                    <div>
+                        <h3 className="text-lg font-semibold">Session &amp; Usage</h3>
+                        <p className="text-xs text-[#b1b4a2] mt-1">Real session history with IDs, prompt previews, timestamps, and usage totals.</p>
                     </div>
+                    <span className="text-xs text-[#b1b4a2]">{sessions.length} session rows</span>
                 </div>
 
-                <div className="bg-[#1a1b16] border border-border-dark rounded-xl p-6">
-                    <h3 className="text-lg font-semibold mb-4">Recent Sessions</h3>
-                    <div className="space-y-3 max-h-64 overflow-y-auto">
-                        {sessions.length === 0 ? (
-                            <p className="text-[#b1b4a2] text-sm">No sessions in this range</p>
-                        ) : (
-                            sessions.map(session => (
-                                <div key={session.id} className="flex items-center justify-between p-3 bg-[#25261e] rounded-lg">
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-white text-sm font-medium truncate">{session.prompt}</p>
-                                        <p className="text-[#b1b4a2] text-xs">{session.date}</p>
-                                    </div>
-                                    <div className="flex items-center gap-3 text-xs text-[#b1b4a2] ml-3">
-                                        <span>{session.lines} net lines</span>
-                                        <span>{session.model ?? '—'}</span>
-                                    </div>
-                                </div>
-                            ))
-                        )}
+                {statsLoading ? (
+                    <p className="text-[#b1b4a2] text-sm">Loading session usage…</p>
+                ) : sessions.length === 0 ? (
+                    <p className="text-[#b1b4a2] text-sm">No sessions in this range.</p>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-border-dark">
+                                    <th className="text-left text-[#b1b4a2] font-medium pb-3 pr-4">S.No</th>
+                                    <th className="text-left text-[#b1b4a2] font-medium pb-3 pr-4">Session_ID</th>
+                                    <th className="text-left text-[#b1b4a2] font-medium pb-3 pr-4">Timestamp</th>
+                                    <th className="text-left text-[#b1b4a2] font-medium pb-3 pr-4">User Prompt</th>
+                                    <th className="text-left text-[#b1b4a2] font-medium pb-3 pr-4">Tokens</th>
+                                    <th className="text-left text-[#b1b4a2] font-medium pb-3 pr-4">Model</th>
+                                    <th className="text-left text-[#b1b4a2] font-medium pb-3">Net Lines</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border-dark">
+                                {sessions.map(session => (
+                                    <tr key={session.id} className="hover:bg-[#25261e]/50 transition-colors align-top">
+                                        <td className="py-3 pr-4 text-white">{session.serial}</td>
+                                        <td className="py-3 pr-4 text-[#b1b4a2] font-mono text-xs" title={session.id}>
+                                            {session.id.slice(0, 8)}…{session.id.slice(-4)}
+                                        </td>
+                                        <td className="py-3 pr-4 text-[#b1b4a2] whitespace-nowrap">{session.timestamp}</td>
+                                        <td className="py-3 pr-4 text-white max-w-[380px]" title={session.fullPrompt}>
+                                            <span className="block truncate">{session.prompt}</span>
+                                        </td>
+                                        <td className="py-3 pr-4 text-[#b1b4a2]">{session.tokens.toLocaleString()}</td>
+                                        <td className="py-3 pr-4 text-[#b1b4a2]">{session.model ?? '—'}</td>
+                                        <td className="py-3 text-[#b1b4a2]">{session.lines.toLocaleString()}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
-                </div>
+                )}
             </div>
 
             <div className="bg-[#1a1b16] border border-border-dark rounded-xl p-6">
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary">devices</span>
-                        <h3 className="text-lg font-semibold">Login History</h3>
+                        <h3 className="text-lg font-semibold">Recent Sign-ins &amp; Account Creation</h3>
                     </div>
-                    <span className="text-[#b1b4a2] text-sm">Recent sign-ins within {activeRange.label}</span>
+                    <span className="text-[#b1b4a2] text-sm">Sorted oldest → newest</span>
                 </div>
                 {statsLoading ? (
                     <p className="text-[#b1b4a2] text-sm">Loading…</p>
@@ -586,6 +735,7 @@ export default function DashboardPage() {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b border-border-dark">
+                                    <th className="text-left text-[#b1b4a2] font-medium pb-3 pr-4">Event</th>
                                     <th className="text-left text-[#b1b4a2] font-medium pb-3 pr-4">Browser</th>
                                     <th className="text-left text-[#b1b4a2] font-medium pb-3 pr-4">Machine ID</th>
                                     <th className="text-left text-[#b1b4a2] font-medium pb-3 pr-4">IP Address</th>
@@ -596,12 +746,17 @@ export default function DashboardPage() {
                             <tbody className="divide-y divide-border-dark">
                                 {loginEvents.map((event) => (
                                     <tr key={event.id} className="hover:bg-[#25261e]/50 transition-colors">
+                                        <td className="py-3 pr-4 text-[#b1b4a2] text-xs uppercase tracking-wide">{event.login_type.replace('_', ' ')}</td>
                                         <td className="py-3 pr-4 text-white">
                                             <div className="flex items-center gap-2">
                                                 <span className="material-symbols-outlined text-primary text-base">
-                                                    {event.login_type === 'device_code' ? 'terminal' : 'language'}
+                                                    {event.login_type === 'device_code'
+                                                        ? 'terminal'
+                                                        : event.login_type === 'account_created'
+                                                            ? 'person_add'
+                                                            : 'language'}
                                                 </span>
-                                                <span>{event.browser ?? event.device_name ?? '—'}</span>
+                                                <span>{event.login_type === 'device_code' ? 'Pakalon CLI' : (event.browser ?? event.device_name ?? '—')}</span>
                                             </div>
                                         </td>
                                         <td className="py-3 pr-4 text-[#b1b4a2] font-mono text-xs" title={event.machine_id ?? undefined}>

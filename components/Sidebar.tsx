@@ -29,8 +29,7 @@ export default function Sidebar() {
   const avatarUrl = user?.github_login ? `https://github.com/${user.github_login}.png` : ''
 
   const handleSignOut = () => {
-    api.clearToken()
-    router.push('/')
+    api.logout()
   }
 
   const navItems: NavItem[] = [

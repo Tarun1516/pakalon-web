@@ -13,8 +13,9 @@ export default function AutomationsPage() {
 
   const [name, setName] = useState('')
   const [prompt, setPrompt] = useState('')
-  const [connectorsInput, setConnectorsInput] = useState('')
-  const [schedule, setSchedule] = useState('hourly')
+  const [selectedConnectors, setSelectedConnectors] = useState<string[]>([])
+  const [scheduleType, setScheduleType] = useState('*/15 * * * *')
+  const [customCron, setCustomCron] = useState('*/15 * * * *')
   const [submitting, setSubmitting] = useState(false)
   const [banner, setBanner] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
@@ -29,22 +30,18 @@ export default function AutomationsPage() {
     setSubmitting(true)
     setBanner(null)
     try {
-      const connectors = connectorsInput
-        .split(',')
-        .map((item) => item.trim().toLowerCase())
-        .filter(Boolean)
-
+      const finalCron = scheduleType === 'custom' ? customCron : scheduleType
       const created = await api.createAutomation({
         name,
         prompt,
-        required_connectors: connectors,
-        schedule_cron: schedule,
+        required_connectors: selectedConnectors,
+        schedule_cron: finalCron,
       })
 
       setName('')
       setPrompt('')
-      setConnectorsInput('')
-      setSchedule('hourly')
+      setSelectedConnectors([])
+      setScheduleType('*/15 * * * *')
       setBanner(
         created.missing_connectors.length
           ? `Automation created. Connect ${created.missing_connectors.join(', ')} on the connectors page to fully activate it.`
@@ -136,12 +133,25 @@ export default function AutomationsPage() {
             </label>
             <label className="space-y-2">
               <span className="text-sm text-[#d7dac8]">Schedule / cron</span>
-              <input
-                value={schedule}
-                onChange={(event) => setSchedule(event.target.value)}
-                placeholder="hourly or 0 9 * * 1-5"
-                className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-white outline-none focus:border-primary"
-              />
+              <select
+                value={scheduleType}
+                onChange={(event) => setScheduleType(event.target.value)}
+                className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-white outline-none focus:border-primary appearance-none"
+              >
+                <option value="*/15 * * * *">Every 15 minutes</option>
+                <option value="0 * * * *">Hourly</option>
+                <option value="0 0 * * *">Daily at midnight</option>
+                <option value="custom">Custom</option>
+              </select>
+              {scheduleType === 'custom' && (
+                <input
+                  value={customCron}
+                  onChange={(event) => setCustomCron(event.target.value)}
+                  placeholder="e.g. */15 * * * *"
+                  className="mt-2 w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-white outline-none focus:border-primary font-mono text-sm"
+                  required
+                />
+              )}
             </label>
           </div>
 
@@ -159,12 +169,35 @@ export default function AutomationsPage() {
 
           <label className="block space-y-2">
             <span className="text-sm text-[#d7dac8]">Needed app connections</span>
-            <input
-              value={connectorsInput}
-              onChange={(event) => setConnectorsInput(event.target.value)}
-              placeholder="github, slack"
-              className="w-full rounded-xl border border-border-dark bg-background-dark px-4 py-3 text-white outline-none focus:border-primary"
-            />
+            {catalog?.connected && catalog.connected.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {catalog.connected.map((connector) => {
+                  const isSelected = selectedConnectors.includes(connector.provider)
+                  return (
+                    <button
+                      key={connector.provider}
+                      type="button"
+                      onClick={() => {
+                        setSelectedConnectors(prev => 
+                          isSelected ? prev.filter(p => p !== connector.provider) : [...prev, connector.provider]
+                        )
+                      }}
+                      className={`px-4 py-2 rounded-xl border text-sm transition-colors ${
+                        isSelected 
+                        ? 'border-primary bg-primary/10 text-primary font-medium' 
+                        : 'border-border-dark bg-background-dark text-[#b1b4a2] hover:border-[#8f937c]'
+                      }`}
+                    >
+                      {connector.display_name}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="text-sm text-[#8f937c] bg-background-dark border border-border-dark rounded-xl px-4 py-3">
+                No apps connected yet. Go to Connectors to link an app.
+              </div>
+            )}
           </label>
           <button
             type="submit"

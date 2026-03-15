@@ -1,8 +1,10 @@
 'use client'
 
+import { useMemo } from 'react'
+
 import {
-    AreaChart,
-    Area,
+    BarChart,
+    Bar,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -13,28 +15,40 @@ import {
 interface ChartDataPoint {
     name: string
     tokens: number
+    fullLabel?: string
 }
 
 interface Props {
     data?: ChartDataPoint[]
 }
 
-const TOKEN_AXIS_MAX = 2_000_000
-const TOKEN_AXIS_TICKS = [0, 56_000, 128_000, 256_000, 512_000, 1_000_000, 1_500_000, 2_000_000]
+function formatTokenTick(value: number) {
+    if (value >= 1_000_000) {
+        return `${Number((value / 1_000_000).toFixed(1))}m`
+    }
 
-const TOKEN_AXIS_LABELS: Record<number, string> = {
-    0: '0',
-    56_000: '56k',
-    128_000: '128k',
-    256_000: '256k',
-    512_000: '512k',
-    1_000_000: '1m',
-    1_500_000: '1.5m',
-    2_000_000: '2m',
+    if (value >= 1_000) {
+        return `${Number((value / 1_000).toFixed(1))}k`
+    }
+
+    return value.toLocaleString()
 }
 
-function formatTokenTick(value: number) {
-    return TOKEN_AXIS_LABELS[value] ?? value.toLocaleString()
+function getNiceAxisMax(value: number) {
+    if (value <= 0) return 100
+
+    const headroomValue = value * 1.15
+    const magnitude = 10 ** Math.floor(Math.log10(headroomValue))
+    const normalized = headroomValue / magnitude
+
+    if (normalized <= 1) return magnitude
+    if (normalized <= 2) return 2 * magnitude
+    if (normalized <= 5) return 5 * magnitude
+    return 10 * magnitude
+}
+
+function buildAxisTicks(maxValue: number) {
+    return Array.from(new Set(Array.from({ length: 5 }, (_, index) => Math.round((maxValue / 4) * index))))
 }
 
 const EMPTY_DATA: ChartDataPoint[] = Array.from({ length: 7 }, (_, i) => ({
@@ -44,16 +58,17 @@ const EMPTY_DATA: ChartDataPoint[] = Array.from({ length: 7 }, (_, i) => ({
 
 export default function TokenUsageChart({ data }: Props) {
     const chartData = data && data.length > 0 ? data : EMPTY_DATA
+    const maxValue = useMemo(
+        () => chartData.reduce((largest, item) => Math.max(largest, item.tokens), 0),
+        [chartData],
+    )
+    const yAxisMax = useMemo(() => getNiceAxisMax(maxValue), [maxValue])
+    const yAxisTicks = useMemo(() => buildAxisTicks(yAxisMax), [yAxisMax])
+
     return (
         <div className="h-[200px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                    <defs>
-                        <linearGradient id="colorTokens" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#d7e19d" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#d7e19d" stopOpacity={0} />
-                        </linearGradient>
-                    </defs>
+                <BarChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#34362b" />
                     <XAxis
                         dataKey="name"
@@ -61,6 +76,8 @@ export default function TokenUsageChart({ data }: Props) {
                         fontSize={12}
                         tickLine={false}
                         axisLine={false}
+                        minTickGap={10}
+                        tickFormatter={(val) => (typeof val === 'string' && val.includes('___') ? val.split('___')[1] : val)}
                     />
                     <YAxis
                         stroke="#b1b4a2"
@@ -68,12 +85,13 @@ export default function TokenUsageChart({ data }: Props) {
                         tickLine={false}
                         axisLine={false}
                         width={60}
-                        domain={[0, TOKEN_AXIS_MAX]}
-                        ticks={TOKEN_AXIS_TICKS}
+                        domain={[0, yAxisMax]}
+                        ticks={yAxisTicks}
                         allowDecimals={false}
                         tickFormatter={formatTokenTick}
                     />
                     <Tooltip
+                        cursor={{ fill: '#ffffff10' }}
                         contentStyle={{
                             backgroundColor: '#25261e',
                             border: '1px solid #34362b',
@@ -81,17 +99,15 @@ export default function TokenUsageChart({ data }: Props) {
                         }}
                         itemStyle={{ color: '#d7e19d' }}
                         labelStyle={{ color: '#b1b4a2' }}
+                        labelFormatter={(label, payload) => payload?.[0]?.payload?.fullLabel ?? label}
                         formatter={(value: number) => [`${value.toLocaleString()} tokens`, 'Tokens']}
                     />
-                    <Area
-                        type="monotone"
+                    <Bar
                         dataKey="tokens"
-                        stroke="#d7e19d"
-                        fillOpacity={1}
-                        fill="url(#colorTokens)"
-                        strokeWidth={2}
+                        fill="#d7e19d"
+                        radius={[4, 4, 0, 0]}
                     />
-                </AreaChart>
+                </BarChart>
             </ResponsiveContainer>
         </div>
     )

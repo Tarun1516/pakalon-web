@@ -77,16 +77,31 @@ export interface WebSignInResponse {
 export interface BillingStatus {
   status: string // active | canceled | past_due | none
   polar_sub_id: string | null
+  period_start?: string | null
   current_period_end: string | null
   grace_until: string | null
   plan: string | null
   days_remaining: number | null
   in_grace_period: boolean
+  days_into_cycle?: number | null
+  billing_model?: string | null
+  security_deposit_usd?: number | null
+  platform_fee_rate?: number | null
+  usage_charges_usd?: number | null
+  platform_fee_usd?: number | null
+  deposit_applied_usd?: number | null
+  estimated_total_due_usd?: number | null
+  cycle_token_usage?: number | null
+  usage_by_model?: Array<{
+    model_id: string
+    tokens: number
+    approx_usage_usd: number
+  }>
 }
 
 export interface LoginEvent {
   id: string
-  login_type: 'web' | 'device_code' | 'token'
+  login_type: 'web' | 'device_code' | 'token' | 'account_created'
   ip_address: string | null
   browser: string | null
   os: string | null
@@ -98,11 +113,14 @@ export interface LoginEvent {
 export interface DashboardSession {
   id: string
   title: string | null
+  prompt_text: string | null
   model_id: string | null
   mode: string | null
   project_dir: string | null
   lines_added: number
   lines_deleted: number
+  messages_count: number
+  tokens_used: number
   context_pct_used: number | null
   created_at: string | null
   updated_at: string | null
@@ -135,6 +153,10 @@ export interface DashboardStats {
   } | null
   sessions: DashboardSession[]
   model_usage: DashboardModelUsage[]
+  monthly_tokens: Array<{
+    month: string
+    tokens: number
+  }>
   totals: {
     tokens: number
     lines: number
@@ -251,10 +273,28 @@ class ApiClient {
   }
 
   logout() {
-    this.clearToken()
-    if (typeof window !== 'undefined') {
-      window.location.href = '/login'
+    const token = this.getToken()
+    const finish = () => {
+      this.clearToken()
+      if (typeof window !== 'undefined') {
+        window.location.href = '/logout'
+      }
     }
+
+    if (!token) {
+      finish()
+      return
+    }
+
+    fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .catch(() => undefined)
+      .finally(finish)
   }
 
   private async fetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {

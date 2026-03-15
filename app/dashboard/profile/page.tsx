@@ -39,8 +39,7 @@ export default function ProfilePage() {
     }
 
     const handleSignOut = () => {
-        api.clearToken()
-        router.push('/')
+        api.logout()
     }
 
     const handleDeleteAccount = async () => {

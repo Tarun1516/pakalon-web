@@ -68,6 +68,39 @@ export default function SupportPage() {
                         </div>
                     ))}
 
+                    <div className="relative w-full h-[280px] rounded-2xl border border-border-dark overflow-hidden mt-2 bg-background-dark">
+                        <div 
+                            className="absolute inset-0"
+                            style={{ 
+                                backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 0)',
+                                backgroundSize: '16px 16px'
+                            }}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center px-4 drop-shadow-2xl">
+                            <div className="bg-[#1c1c1c] border border-white/5 rounded-xl p-4 w-full shadow-2xl flex items-center gap-3">
+                                <div className="bg-[#064e3b] border border-[#047857] rounded-lg w-10 h-10 flex items-center justify-center flex-shrink-0">
+                                    <span className="material-symbols-outlined text-[#34d399] text-xl">
+                                        location_on
+                                    </span>
+                                </div>
+                                
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-white font-bold text-[14px]">Developed at Salem</h4>
+                                        <div className="w-[32px] h-[24px] rounded-[3px] flex items-center justify-center flex-shrink-0 ml-2 overflow-hidden border border-white/10">
+                                            <img src="/others/LTTE.jpg" alt="Salem Logo" className="w-full h-full object-cover" />
+                                        </div>
+                                    </div>
+                                    <p className="text-[#b1b4a2] text-[13px] mt-0.5 truncate">Salem, Tamil Nadu</p>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                        <p className="text-[#93c5fd] text-[13px] truncate">India</p>
+                                        <span className="text-[#52525b] text-[10px]">●</span>
+                                        <p className="text-[#b1b4a2] text-[13px] truncate">Built with care</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="lg:col-span-8">
